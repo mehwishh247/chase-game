@@ -1,0 +1,45 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# VSCode / IDE settings
+.vscode/
+.idea/
+
+# Mac / Linux system files
+.DS_Store
+Thumbs.db
+
+# Python environment
+.env
+.venv/
+env/
+venv/
+Pipfile.lock
+poetry.lock
+
+# Logs / temp
+*.log
+*.tmp
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Video + Assets (optional: ignore large media unless needed)
+assets/videos/*.mp4
+assets/videos/*.webm
+assets/audio/
+assets/raw/
+
+# Arduino compiled files (if used)
+*.hex
+*.elf
+
+# Jupyter / dev notebooks
+*.ipynb_checkpoints
+
+# Cursor tool history (if you want)
+.cursor_history/
