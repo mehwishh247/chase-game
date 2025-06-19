@@ -35,14 +35,16 @@ current_difficulty = 1
 max_difficulty = 5
 score = 0
 game_over_timer = 0
-game_over_duration = 3000  # 3 seconds for score display
+game_over_duration = 4000  # 4 seconds for score display
 game_start_time = 0
-game_duration = 120000  # 2 minutes in milliseconds
+game_duration = 60000  # 1 minute in milliseconds
 video_playing = False
 video_text = ""
 pattern_scored = False  # Flag to track if current pattern has been scored
 hits = 0  # Track number of hits
 misses = 0  # Track number of misses
+intro_duration = 7000  # 7 seconds for intro video
+win_lose_duration = 5000  # 5 seconds for win/lose videos
 
 # Tile types for different difficulties
 tile_types = ["green", "red", "blue", "yellow", "purple", "orange"]
@@ -178,17 +180,14 @@ def check_tile_press():
                 score += 2  # Correct tile
                 hits += 1
                 pattern_scored = True  # Mark this pattern as scored
-                print(f"HIT! +2 points. Score: {score}, Hits: {hits}")
             else:
                 score -= 1  # Wrong tile (rock)
                 misses += 1
                 pattern_scored = True  # Mark this pattern as scored
-                print(f"MISS! -1 point. Score: {score}, Misses: {misses}")
         else:
             score -= 1  # Pressed empty tile
             misses += 1
             pattern_scored = True  # Mark this pattern as scored
-            print(f"MISS! (Empty tile) -1 point. Score: {score}, Misses: {misses}")
 
 def draw_ui_area():
     """Draw the UI area on the right side of the screen"""
@@ -209,6 +208,7 @@ def draw_ui_area():
         ui_surface.blit(text2, text2_rect)
         
     elif game_state == PLAYING_INTRO:
+        print('video playing')
         # Show intro video text
         font = pygame.font.Font(None, 36)
         text = font.render(video_text, True, (255, 255, 255))
@@ -306,7 +306,7 @@ while running:
                 game_state = PLAYING_INTRO
                 play_intro_video()
                 # Wait 2 seconds for intro text
-                pygame.time.wait(2000)
+                pygame.time.wait(7000)
                 game_state = PLAYING_GAME
                 pattern_timer = current_time
                 difficulty_timer = current_time
@@ -323,7 +323,7 @@ while running:
     if game_state == GAME_OVER:
         if video_playing:
             # Wait 2 seconds for video text
-            if current_time - game_over_timer > 2000:
+            if current_time - game_over_timer > 3500:
                 video_playing = False
                 game_over_timer = current_time  # Reset timer for score display
         elif current_time - game_over_timer > game_over_duration:
@@ -336,7 +336,7 @@ while running:
         # Check for tile presses
         check_tile_press()
         
-        # Check if game time is up (2 minutes)
+        # Check if game time is up (1 minute)
         if current_time - game_start_time >= game_duration:
             won = score > 0
             end_game(won)
@@ -354,8 +354,6 @@ while running:
             active_tiles = generate_pattern(current_difficulty)
             pattern_timer = current_time
             pattern_scored = False  # Reset the scoring flag for the new pattern
-            # Debug output
-            print(f"New pattern: {active_tiles}")
     
     # Draw everything
     screen.fill((0, 0, 0))  # Black background
