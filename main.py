@@ -1,3 +1,4 @@
+from math import ceil
 import pygame
 import subprocess
 import time
@@ -157,7 +158,7 @@ def handle_mouse_click(pos):
     tile_height = grid_height // 3
     
     grid_x = pos[0] // tile_width
-    grid_y = pos[1] // tile_height
+    grid_y = ceil(pos[1] / tile_height)
     
     # Check if tile (2, 2) was clicked (3rd column, 3rd row based on zero index)
     if grid_x == 2 and grid_y == 2:
