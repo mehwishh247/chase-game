@@ -257,7 +257,7 @@ class ArduinoTileController:
         Returns:
             True if connected, False otherwise
         """
-        return self.is_connected and self.serial_connection and self.serial_connection.is_open
+        return bool(self.is_connected and self.serial_connection and self.serial_connection.is_open)
 
 # Global instance for easy access
 _arduino_controller: Optional[ArduinoTileController] = None
