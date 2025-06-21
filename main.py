@@ -98,18 +98,18 @@ def get_pressed_tile():
     return None
 
 def play_intro_video():
-    """Play intro video in fullscreen using ffplay, with fallback text"""
+    """Play intro video in fullscreen using mpv, with fallback text"""
     global video_playing, video_text
     video_playing = True
     video_text = "Playing intro..."
     
     try:
-        # Use ffplay to play video in fullscreen
+        # Use mpv to play video in fullscreen
         subprocess.run([
-            "ffplay", 
-            "-fs",           # Fullscreen
-            "-autoexit",     # Exit when video ends
-            "-nodisp",       # Hide display window (plays in background)
+            "mpv", 
+            "--fs",           # Fullscreen
+            "--no-audio",     # Disable sound
+            "--really-quiet", # Suppress terminal messages
             str(INTRO_VIDEO)
         ], timeout=7.5)  # Slightly longer timeout than video duration
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
@@ -119,18 +119,18 @@ def play_intro_video():
         video_playing = False
 
 def play_win_video():
-    """Play win video in fullscreen using ffplay, with fallback text"""
+    """Play win video in fullscreen using mpv, with fallback text"""
     global video_playing, video_text
     video_playing = True
     video_text = "Playing win video..."
     
     try:
-        # Use ffplay to play video in fullscreen
+        # Use mpv to play video in fullscreen
         subprocess.run([
-            "ffplay", 
-            "-fs",           # Fullscreen
-            "-autoexit",     # Exit when video ends
-            "-nodisp",       # Hide display window (plays in background)
+            "mpv", 
+            "--fs",           # Fullscreen
+            "--no-audio",     # Disable sound
+            "--really-quiet", # Suppress terminal messages
             str(WIN_VIDEO)
         ], timeout=4.0)  # Slightly longer timeout than video duration
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
@@ -140,18 +140,18 @@ def play_win_video():
         video_playing = False
 
 def play_lose_video():
-    """Play lose video in fullscreen using ffplay, with fallback text"""
+    """Play lose video in fullscreen using mpv, with fallback text"""
     global video_playing, video_text
     video_playing = True
     video_text = "Playing lose video..."
     
     try:
-        # Use ffplay to play video in fullscreen
+        # Use mpv to play video in fullscreen
         subprocess.run([
-            "ffplay", 
-            "-fs",           # Fullscreen
-            "-autoexit",     # Exit when video ends
-            "-nodisp",       # Hide display window (plays in background)
+            "mpv", 
+            "--fs",           # Fullscreen
+            "--no-audio",     # Disable sound
+            "--really-quiet", # Suppress terminal messages
             str(LOSE_VIDEO)
         ], timeout=4.0)  # Slightly longer timeout than video duration
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
@@ -385,14 +385,14 @@ def end_game(won):
 def play_background_video():
     """Play background video in the top 80% of screen"""
     try:
-        # Use ffplay to play video in the top portion of screen
+        # Use mpv to play video in the top portion of screen
         subprocess.run([
-            "ffplay", 
-            "-x", str(screen_width),           # Width
-            "-y", str(grid_height),            # Height (top 80%)
-            "-autoexit",                       # Exit when video ends
-            "-loop", "0",                      # Loop indefinitely
-            "-nodisp",                         # Hide display window
+            "mpv", 
+            "--x", str(screen_width),           # Width
+            "--y", str(grid_height),            # Height (top 80%)
+            "--no-audio",                       # Disable sound
+            "--really-quiet",                   # Suppress terminal messages
+            "--loop-file",                      # Loop indefinitely
             str(BACKGROUND_VIDEO)
         ], timeout=1)  # Short timeout to check if it starts
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
