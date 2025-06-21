@@ -286,15 +286,9 @@ def draw_ui_area():
     screen.blit(ui_surface, (0, grid_height))
 
 def draw_grid_area():
-    """Draw the tile grid in the left area maintaining aspect ratio"""
-    # Create a surface for the grid area
+    """Draw the main tile grid in the top 80% of screen"""
     grid_surface = pygame.Surface((grid_width, grid_height))
-    grid_surface.fill((0, 0, 0))  # Black background
-    
-    # Draw the tile grid on the grid surface
     draw_tile_grid(grid_surface, active_tiles)
-    
-    # Draw grid area on main screen
     screen.blit(grid_surface, (0, 0))
 
 def play_looping_background_video():
@@ -433,7 +427,7 @@ def run_desktop_game():
             elif event.type == pygame.MOUSEBUTTONDOWN and game_state == WAITING_FOR_START:
                 if handle_mouse_click(event.pos):
                     game_state = PLAYING_INTRO
-                    # play_intro_video()
+                    play_intro_video()
                     # Wait 2 seconds for intro text
                     pygame.time.wait(3000)
                     game_state = PLAYING_GAME
