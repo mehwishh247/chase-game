@@ -4,11 +4,18 @@ const int numRows = 3;
 const int numCols = 5;
 const int totalTiles = numRows * numCols;
 
+// 2D mapping table for tile pins: tilePins[row][col]
+const uint8_t tilePins[3][5] = {
+  {2, 3, 4, 5, 6},     // Row 0 (cols 0–4)
+  {7, 8, 14, 15, 16},  // Row 1 (cols 0–4)
+  {17, 18, 19, 20, 21} // Row 2 (cols 0–4)
+};
+
 // SPI chip select pins for the two MCP3008 chips
 const int CS1 = 10; // MCP3008 #1
 const int CS2 = 11; // MCP3008 #2
 
-// Output LED pins
+// Output LED pins (keeping for backward compatibility)
 const int ledPins[totalTiles] = {
   2, 3, 4, 5, 6,     // Row 0 (cols 0–4)
   7, 8, 14, 15, 16,  // Row 1 (cols 0–4)
@@ -20,16 +27,46 @@ unsigned long lastPressTime[totalTiles]; // for debounce
 const int debounceDelay = 300; // milliseconds
 const int pressThreshold = 15; // ADC value threshold
 
+// Function to map brightness string to PWM value
+int mapBrightness(const String& brightness) {
+  if (brightness == "bright" || brightness == "100") {
+    return 255;
+  } else if (brightness == "dim" || brightness == "40") {
+    return 100;
+  } else if (brightness == "low" || brightness == "10") {
+    return 25;
+  } else if (brightness == "off" || brightness == "0") {
+    return 0;
+  } else {
+    // Try to parse as percentage (0-100)
+    int percent = brightness.toInt();
+    if (percent >= 0 && percent <= 100) {
+      return map(percent, 0, 100, 0, 255);
+    }
+    return 0; // Default to off for invalid values
+  }
+}
+
 void setup() {
   Serial.begin(9600);
   SPI.begin();
 
-  // Set LED pins as output
-  for (int i = 0; i < totalTiles; i++) {
-    pinMode(ledPins[i], OUTPUT);
-    analogWrite(ledPins[i], 0);
-    brightnessValues[i] = 0;
-    lastPressTime[i] = 0;
+  pinMode(CS1, OUTPUT);
+  pinMode(CS2, OUTPUT);
+  digitalWrite(CS1, HIGH); // idle high
+  digitalWrite(CS2, HIGH);
+
+
+  // Set LED pins as output using the 2D mapping
+  for (int row = 0; row < numRows; row++) {
+    for (int col = 0; col < numCols; col++) {
+      int pin = tilePins[row][col];
+      pinMode(pin, OUTPUT);
+      analogWrite(pin, 0);
+      int index = row * numCols + col;
+      brightnessValues[index] = 0;
+      lastPressTime[index] = 0;
+    }
   }
 
   Serial.println("Arduino ready.");
@@ -47,10 +84,13 @@ void handleSerialCommands() {
     command.trim();
 
     if (command.startsWith("light_all")) {
-      int brightness = command.substring(10).toInt();
-      brightness = constrain(map(brightness, 0, 100, 0, 255), 0, 255);
-      for (int i = 0; i < totalTiles; i++) {
-        brightnessValues[i] = brightness;
+      String brightness = command.substring(10);
+      int pwmValue = mapBrightness(brightness);
+      for (int row = 0; row < numRows; row++) {
+        for (int col = 0; col < numCols; col++) {
+          int index = row * numCols + col;
+          brightnessValues[index] = pwmValue;
+        }
       }
 
     } else if (command.startsWith("light")) {
@@ -61,12 +101,12 @@ void handleSerialCommands() {
       if (space1 != -1 && space2 != -1 && space3 != -1) {
         int row = command.substring(space1 + 1, space2).toInt();
         int col = command.substring(space2 + 1, space3).toInt();
-        int brightness = command.substring(space3 + 1).toInt();
+        String brightness = command.substring(space3 + 1);
 
-        int index = row * numCols + col;
-        if (index >= 0 && index < totalTiles) {
-          brightness = constrain(map(brightness, 0, 100, 0, 255), 0, 255);
-          brightnessValues[index] = brightness;
+        if (row >= 0 && row < numRows && col >= 0 && col < numCols) {
+          int pwmValue = mapBrightness(brightness);
+          int index = row * numCols + col;
+          brightnessValues[index] = pwmValue;
         }
       }
     }
@@ -74,8 +114,12 @@ void handleSerialCommands() {
 }
 
 void updateLEDs() {
-  for (int i = 0; i < totalTiles; i++) {
-    analogWrite(ledPins[i], brightnessValues[i]);
+  for (int row = 0; row < numRows; row++) {
+    for (int col = 0; col < numCols; col++) {
+      int pin = tilePins[row][col];
+      int index = row * numCols + col;
+      analogWrite(pin, brightnessValues[index]);
+    }
   }
 }
 

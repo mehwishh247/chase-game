@@ -323,6 +323,19 @@ def cleanup():
         _arduino_controller.disconnect()
         _arduino_controller = None
 
+def turn_off_all_tiles() -> bool:
+    """
+    Global wrapper for turning off all tiles.
+    """
+    global _arduino_controller
+    
+    if _arduino_controller is None:
+        logger.error("Arduino not initialized. Call initialize_arduino() first.")
+        return False
+    
+    return _arduino_controller.turn_off_all_tiles()
+
+
 # Example usage and testing
 if __name__ == "__main__":
     try:
