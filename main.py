@@ -3,9 +3,20 @@ import pygame
 import subprocess
 import time
 import random
+from pathlib import Path
 from tile_logic import draw_tile_grid #, get_pressed_tile
+from video_player import play_fullscreen_video
+from tile_comm import initialize_arduino, get_pressed_tile, light_tile, turn_off_all_tiles
 
 pygame.init()
+
+# Set up paths for cross-platform compatibility
+ASSETS_DIR = Path(__file__).parent / "assets"
+VIDEOS_DIR = ASSETS_DIR / "videos"
+INTRO_VIDEO = VIDEOS_DIR / "intro.mp4"
+WIN_VIDEO = VIDEOS_DIR / "win.mp4"
+LOSE_VIDEO = VIDEOS_DIR / "lose.mp4"
+BACKGROUND_VIDEO = VIDEOS_DIR / "background.mp4"  # Add background video path
 
 # Set up 16:9 aspect ratio screen
 screen_width = 1920
@@ -13,25 +24,28 @@ screen_height = 1080
 screen = pygame.display.set_mode((screen_width, screen_height))
 clock = pygame.time.Clock()
 
-# Calculate areas: 60% for grid, 40% for UI
-grid_width = int(screen_width * 0.6)
-ui_width = screen_width - grid_width
-grid_height = screen_height
-ui_height = screen_height
+# Calculate areas: Grid covers full width and top 80% height, UI in bottom 20%
+grid_width = screen_width
+grid_height = int(screen_height * 0.8)
+ui_width = screen_width
+ui_height = screen_height - grid_height
 
 # Game states
 WAITING_FOR_START = "waiting_for_start"
 PLAYING_INTRO = "playing_intro"
 PLAYING_GAME = "playing_game"
 GAME_OVER = "game_over"
+SHOWING_FINAL_SCORE = "showing_final_score"  # New state for final score display
 
 # Game variables
 game_state = WAITING_FOR_START
+last_stump_pos = None
+total_patterns_played = 0
 active_tiles = {(2, 2): "stump"}  # Initialize with center tile as stump
 pattern_timer = 0
 pattern_interval = 3000  # 3 seconds in milliseconds
 difficulty_timer = 0
-difficulty_interval = 10000  # 10 seconds in milliseconds
+difficulty_interval = 12000  # 12 seconds in milliseconds
 current_difficulty = 1
 max_difficulty = 5
 score = 0
@@ -84,24 +98,69 @@ def get_pressed_tile():
     return None
 
 def play_intro_video():
-    """Show intro video text instead of playing actual video"""
+    """Play intro video in fullscreen using ffplay, with fallback text"""
     global video_playing, video_text
     video_playing = True
-    video_text = "Intro video playing..."
+    video_text = "Playing intro..."
+    
+    try:
+        # Use ffplay to play video in fullscreen
+        subprocess.run([
+            "ffplay", 
+            "-fs",           # Fullscreen
+            "-autoexit",     # Exit when video ends
+            "-nodisp",       # Hide display window (plays in background)
+            str(INTRO_VIDEO)
+        ], timeout=7.5)  # Slightly longer timeout than video duration
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: display text for 7 seconds
+        time.sleep(7)
+    finally:
+        video_playing = False
 
 def play_win_video():
-    """Show win video text instead of playing actual video"""
+    """Play win video in fullscreen using ffplay, with fallback text"""
     global video_playing, video_text
     video_playing = True
-    video_text = "Win video playing..."
+    video_text = "Playing win video..."
+    
+    try:
+        # Use ffplay to play video in fullscreen
+        subprocess.run([
+            "ffplay", 
+            "-fs",           # Fullscreen
+            "-autoexit",     # Exit when video ends
+            "-nodisp",       # Hide display window (plays in background)
+            str(WIN_VIDEO)
+        ], timeout=4.0)  # Slightly longer timeout than video duration
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: display text for 3.5 seconds
+        time.sleep(3.5)
+    finally:
+        video_playing = False
 
 def play_lose_video():
-    """Show lose video text instead of playing actual video"""
+    """Play lose video in fullscreen using ffplay, with fallback text"""
     global video_playing, video_text
     video_playing = True
-    video_text = "Lose video playing..."
+    video_text = "Playing lose video..."
+    
+    try:
+        # Use ffplay to play video in fullscreen
+        subprocess.run([
+            "ffplay", 
+            "-fs",           # Fullscreen
+            "-autoexit",     # Exit when video ends
+            "-nodisp",       # Hide display window (plays in background)
+            str(LOSE_VIDEO)
+        ], timeout=4.0)  # Slightly longer timeout than video duration
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: display text for 3.5 seconds
+        time.sleep(3.5)
+    finally:
+        video_playing = False
 
-def generate_pattern(difficulty):
+def generate_pattern(difficulty, last_stump_pos=None, total_patterns_played=0):
     """
     Generate a tile pattern for a 3x5 grid based on difficulty.
     - Always at least one "stump" and one "rock"
@@ -111,6 +170,10 @@ def generate_pattern(difficulty):
     - Never place two types on the same tile
     - Never exceed 4 lit tiles total
     - Valid positions: (row, col) with row in 0-2, col in 0-4
+    - New stump must be different from last stump position
+    - New stump must be at least 2 Manhattan distance away (except in last 3 patterns)
+    - Allow 1-step diagonals (Manhattan distance = 2)
+    - In last 3 patterns, drop distance restriction entirely
     """
     rows, cols = 3, 5
     all_positions = [(r, c) for r in range(rows) for c in range(cols)]
@@ -134,8 +197,35 @@ def generate_pattern(difficulty):
         num_rocks = max(1, num_tiles - 1)
         num_stumps = num_tiles - num_rocks
 
+    # Filter available positions for stump based on last stump position
+    available_positions = all_positions.copy()
+    
+    if last_stump_pos is not None:
+        # Remove the last stump position to avoid reusing it
+        if last_stump_pos in available_positions:
+            available_positions.remove(last_stump_pos)
+        
+        # Check if we're in the last 3 patterns (drop distance restriction)
+        # Assuming game duration is 60 seconds and pattern interval is 3-1.5 seconds
+        # Roughly 20-40 patterns per game, so last 3 patterns would be around patterns 17+
+        is_last_3_patterns = total_patterns_played >= 17
+        
+        if not is_last_3_patterns:
+            # Filter positions to only those with Manhattan distance >= 2
+            # This allows 1-step diagonals (distance = 2) but prevents adjacent moves
+            reachable_positions = []
+            for pos in available_positions:
+                # Calculate Manhattan distance
+                distance = abs(pos[0] - last_stump_pos[0]) + abs(pos[1] - last_stump_pos[1])
+                if distance >= 2:  # At least 2 Manhattan distance away
+                    reachable_positions.append(pos)
+            
+            # If no reachable positions, fall back to all available positions
+            if reachable_positions:
+                available_positions = reachable_positions
+
     # Randomly select unique positions for stumps and rocks
-    positions = random.sample(all_positions, num_tiles)
+    positions = random.sample(available_positions, num_tiles)
     stump_positions = positions[:num_stumps]
     rock_positions = positions[num_stumps:]
 
@@ -267,7 +357,7 @@ def draw_ui_area():
             ui_surface.blit(misses_text, misses_rect)
     
     # Draw UI area on main screen
-    screen.blit(ui_surface, (grid_width, 0))
+    screen.blit(ui_surface, (0, grid_height))
 
 def draw_grid_area():
     """Draw the tile grid in the left area maintaining aspect ratio"""
@@ -292,22 +382,226 @@ def end_game(won):
     else:
         play_lose_video()
 
-running = True
-while running:
-    current_time = pygame.time.get_ticks()
+def play_background_video():
+    """Play background video in the top 80% of screen"""
+    try:
+        # Use ffplay to play video in the top portion of screen
+        subprocess.run([
+            "ffplay", 
+            "-x", str(screen_width),           # Width
+            "-y", str(grid_height),            # Height (top 80%)
+            "-autoexit",                       # Exit when video ends
+            "-loop", "0",                      # Loop indefinitely
+            "-nodisp",                         # Hide display window
+            str(BACKGROUND_VIDEO)
+        ], timeout=1)  # Short timeout to check if it starts
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: just continue without background video
+        pass
+
+def show_splash_screen():
+    """Show splash screen in fullscreen"""
+    # Fill screen with dark background
+    screen.fill((20, 20, 20))
     
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT or (
-            event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
-        ):
-            running = False
+    # Draw splash text
+    font_large = pygame.font.Font(None, 72)
+    font_small = pygame.font.Font(None, 36)
+    
+    title = font_large.render("TILE GAME", True, (255, 255, 255))
+    subtitle = font_small.render("Step on the center tile to begin", True, (200, 200, 200))
+    
+    title_rect = title.get_rect(center=(screen_width // 2, screen_height // 2 - 50))
+    subtitle_rect = subtitle.get_rect(center=(screen_width // 2, screen_height // 2 + 50))
+    
+    screen.blit(title, title_rect)
+    screen.blit(subtitle, subtitle_rect)
+    
+    pygame.display.flip()
+
+def show_final_score_fullscreen():
+    """Show final score in fullscreen"""
+    # Fill screen with dark background
+    screen.fill((20, 20, 20))
+    
+    # Draw final score
+    font_large = pygame.font.Font(None, 72)
+    font_medium = pygame.font.Font(None, 48)
+    font_small = pygame.font.Font(None, 36)
+    
+    score_text = font_large.render(f"Final Score: {score}", True, (255, 255, 255))
+    hits_text = font_medium.render(f"Hits: {hits}", True, (0, 255, 0))
+    misses_text = font_medium.render(f"Misses: {misses}", True, (255, 0, 0))
+    instruction = font_small.render("Press any key to play again", True, (200, 200, 200))
+    
+    score_rect = score_text.get_rect(center=(screen_width // 2, screen_height // 2 - 100))
+    hits_rect = hits_text.get_rect(center=(screen_width // 2, screen_height // 2 - 20))
+    misses_rect = misses_text.get_rect(center=(screen_width // 2, screen_height // 2 + 20))
+    instruction_rect = instruction.get_rect(center=(screen_width // 2, screen_height // 2 + 100))
+    
+    screen.blit(score_text, score_rect)
+    screen.blit(hits_text, hits_rect)
+    screen.blit(misses_text, misses_rect)
+    screen.blit(instruction, instruction_rect)
+    
+    pygame.display.flip()
+
+def draw_mini_grid():
+    """Draw a small version of the tile grid in the bottom 20% of screen"""
+    # Calculate mini grid dimensions
+    mini_grid_width = screen_width // 3  # Make it smaller
+    mini_grid_height = ui_height // 2
+    mini_tile_width = mini_grid_width // 5
+    mini_tile_height = mini_grid_height // 3
+    
+    # Position mini grid in center of bottom area
+    mini_grid_x = (screen_width - mini_grid_width) // 2
+    mini_grid_y = grid_height + (ui_height - mini_grid_height) // 2
+    
+    # Draw mini grid background
+    mini_surface = pygame.Surface((mini_grid_width, mini_grid_height))
+    mini_surface.fill((40, 40, 40))
+    
+    # Draw mini tiles
+    for row in range(3):
+        for col in range(5):
+            tile_x = col * mini_tile_width
+            tile_y = row * mini_tile_height
+            
+            if (row, col) in active_tiles:
+                if active_tiles[(row, col)] == "stump":
+                    color = (0, 255, 0)  # Green for stumps
+                else:
+                    color = (255, 0, 0)  # Red for rocks
+            else:
+                color = (80, 80, 80)  # Gray for empty tiles
+            
+            pygame.draw.rect(mini_surface, color, 
+                           (tile_x, tile_y, mini_tile_width - 2, mini_tile_height - 2))
+    
+    # Draw mini grid on main screen
+    screen.blit(mini_surface, (mini_grid_x, mini_grid_y))
+
+def run_desktop_game():
+    """Main game loop for desktop gameplay"""
+    global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
+    global score, hits, misses, current_difficulty, pattern_scored, video_playing
+    global pattern_interval, game_over_timer
+    
+    running = True
+    while running:
+        current_time = pygame.time.get_ticks()
         
-        elif event.type == pygame.MOUSEBUTTONDOWN and game_state == WAITING_FOR_START:
-            if handle_mouse_click(event.pos):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT or (
+                event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
+            ):
+                running = False
+            
+            elif event.type == pygame.MOUSEBUTTONDOWN and game_state == WAITING_FOR_START:
+                if handle_mouse_click(event.pos):
+                    game_state = PLAYING_INTRO
+                    # play_intro_video()
+                    # Wait 2 seconds for intro text
+                    pygame.time.wait(3000)
+                    game_state = PLAYING_GAME
+                    pattern_timer = current_time
+                    difficulty_timer = current_time
+                    game_start_time = current_time
+                    score = 0
+                    hits = 0
+                    misses = 0
+                    current_difficulty = 1
+                    active_tiles = {}  # Clear the center tile
+                    pattern_scored = False
+                    video_playing = False
+
+        # Handle game over timer
+        if game_state == GAME_OVER:
+            if video_playing:
+                # Wait 2 seconds for video text
+                if current_time - game_over_timer > 3500:
+                    video_playing = False
+                    game_over_timer = current_time  # Reset timer for score display
+            elif current_time - game_over_timer > game_over_duration:
+                game_state = WAITING_FOR_START
+                active_tiles = {(2, 2): "stump"}  # Highlight center tile
+                video_playing = False
+        
+        # Update game logic
+        if game_state == PLAYING_GAME:
+            # Check for tile presses
+            check_tile_press()
+            
+            # Check if game time is up (1 minute)
+            if current_time - game_start_time >= game_duration:
+                won = score > 0
+                end_game(won)
+                continue
+            
+            # Update difficulty every 10 seconds
+            if current_time - difficulty_timer > difficulty_interval:
+                current_difficulty = min(current_difficulty + 1, max_difficulty)
+                difficulty_timer = current_time
+                # Decrease pattern interval (faster patterns)
+                pattern_interval = max(1500, 3000 - (current_difficulty - 1) * 300)  # 3s to 1.5s
+            
+            # Update pattern every pattern_interval
+            if current_time - pattern_timer > pattern_interval:
+                active_tiles = generate_pattern(current_difficulty, last_stump_pos)
+                last_stump_pos = [pos for pos, t in active_tiles.items() if t == "stump"][0]
+
+                pattern_timer = current_time
+                pattern_scored = False  # Reset the scoring flag for the new pattern
+        
+        # Draw everything
+        screen.fill((0, 0, 0))  # Black background
+        
+        draw_grid_area()
+        draw_ui_area()
+        
+        pygame.display.flip()
+        clock.tick(30)
+
+def run_arduino_game():
+    """Main game loop for Arduino-based gameplay"""
+    global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
+    global score, hits, misses, current_difficulty, pattern_scored, video_playing
+    global pattern_interval, game_over_timer
+    
+    # Initialize Arduino connection
+    initialize_arduino()
+    
+    running = True
+    while running:
+        current_time = pygame.time.get_ticks()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT or (
+                event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
+            ):
+                running = False
+            
+            elif event.type == pygame.KEYDOWN and game_state == SHOWING_FINAL_SCORE:
+                # Any key press returns to splash screen
+                game_state = WAITING_FOR_START
+                active_tiles = {(2, 2): "stump"}  # Highlight center tile
+                video_playing = False
+
+        # Handle different game states
+        if game_state == WAITING_FOR_START:
+            # Show splash screen
+            show_splash_screen()
+            
+            # Light center tile with brightness 100
+            turn_off_all_tiles()
+            light_tile(2, 2, "bright")  # Use string color instead of number
+            
+            # Check if center tile is pressed
+            pressed_tile = get_pressed_tile()
+            if pressed_tile == (2, 2):
                 game_state = PLAYING_INTRO
                 play_intro_video()
-                # Wait 2 seconds for intro text
-                pygame.time.wait(7000)
                 game_state = PLAYING_GAME
                 pattern_timer = current_time
                 difficulty_timer = current_time
@@ -319,50 +613,83 @@ while running:
                 active_tiles = {}  # Clear the center tile
                 pattern_scored = False
                 video_playing = False
+                
+                # Start background video
+                play_background_video()
+        
+        elif game_state == PLAYING_GAME:
+            # Check for tile presses using Arduino
+            check_tile_press()
+            
+            # Check if game time is up (1 minute)
+            if current_time - game_start_time >= game_duration:
+                won = score > 0
+                end_game(won)
+                continue
+            
+            # Update difficulty every 10 seconds
+            if current_time - difficulty_timer > difficulty_interval:
+                current_difficulty = min(current_difficulty + 1, max_difficulty)
+                difficulty_timer = current_time
+                # Decrease pattern interval (faster patterns)
+                pattern_interval = max(1500, 3000 - (current_difficulty - 1) * 300)  # 3s to 1.5s
+            
+            # Update pattern every pattern_interval
+            if current_time - pattern_timer > pattern_interval:
+                # Turn off all tiles first
+                turn_off_all_tiles()
+                
+                # Generate new pattern
+                active_tiles = generate_pattern(current_difficulty, last_stump_pos)
+                
+                # Light up tiles according to pattern
+                for (row, col), tile_type in active_tiles.items():
+                    if tile_type == "stump":
+                        light_tile(row, col, "bright")  # Bright for stumps
+                    elif tile_type == "rock":
+                        light_tile(row, col, "medium")   # Medium for rocks
+                
+                # Light up background tiles
+                for row in range(3):
+                    for col in range(5):
+                        if (row, col) not in active_tiles:
+                            light_tile(row, col, "dim")  # Dim for background
+                
+                pattern_timer = current_time
+                pattern_scored = False  # Reset the scoring flag for the new pattern
+            
+            # Draw gameplay screen
+            screen.fill((0, 0, 0))  # Black background
+            
+            # Draw mini grid in bottom 20%
+            draw_mini_grid()
+            
+            # Draw UI info in bottom area
+            draw_ui_area()
+            
+            pygame.display.flip()
+        
+        elif game_state == GAME_OVER:
+            if video_playing:
+                # Wait for video to finish
+                if current_time - game_over_timer > 3500:
+                    video_playing = False
+                    game_over_timer = current_time
+            else:
+                # Show final score fullscreen
+                game_state = SHOWING_FINAL_SCORE
+                show_final_score_fullscreen()
+        
+        elif game_state == SHOWING_FINAL_SCORE:
+            # Final score is already displayed, wait for key press
+            pass
+        
+        clock.tick(30)
 
-    # Handle game over timer
-    if game_state == GAME_OVER:
-        if video_playing:
-            # Wait 2 seconds for video text
-            if current_time - game_over_timer > 3500:
-                video_playing = False
-                game_over_timer = current_time  # Reset timer for score display
-        elif current_time - game_over_timer > game_over_duration:
-            game_state = WAITING_FOR_START
-            active_tiles = {(2, 2): "stump"}  # Highlight center tile
-            video_playing = False
-    
-    # Update game logic
-    if game_state == PLAYING_GAME:
-        # Check for tile presses
-        check_tile_press()
-        
-        # Check if game time is up (1 minute)
-        if current_time - game_start_time >= game_duration:
-            won = score > 0
-            end_game(won)
-            continue
-        
-        # Update difficulty every 10 seconds
-        if current_time - difficulty_timer > difficulty_interval:
-            current_difficulty = min(current_difficulty + 1, max_difficulty)
-            difficulty_timer = current_time
-            # Decrease pattern interval (faster patterns)
-            pattern_interval = max(1500, 3000 - (current_difficulty - 1) * 300)  # 3s to 1.5s
-        
-        # Update pattern every pattern_interval
-        if current_time - pattern_timer > pattern_interval:
-            active_tiles = generate_pattern(current_difficulty)
-            pattern_timer = current_time
-            pattern_scored = False  # Reset the scoring flag for the new pattern
-    
-    # Draw everything
-    screen.fill((0, 0, 0))  # Black background
-    
-    draw_grid_area()
-    draw_ui_area()
-    
-    pygame.display.flip()
-    clock.tick(30)
+# Start the desktop game
+run_desktop_game()
+
+# Start the Arduino game
+# run_arduino_game()
 
 pygame.quit()
