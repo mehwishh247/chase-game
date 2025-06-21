@@ -3,10 +3,11 @@ import pygame
 import subprocess
 import time
 import random
+import threading
 from pathlib import Path
 from tile_logic import draw_tile_grid #, get_pressed_tile
 from video_player import play_fullscreen_video
-from tile_comm import initialize_arduino, get_pressed_tile, light_tile, turn_off_all_tiles
+from tile_comm import initialize_arduino, light_tile, turn_off_all_tiles
 
 pygame.init()
 
@@ -52,7 +53,7 @@ score = 0
 game_over_timer = 0
 game_over_duration = 4000  # 4 seconds for score display
 game_start_time = 0
-game_duration = 60000  # 1 minute in milliseconds
+game_duration = 120000  # 2 minute in milliseconds
 video_playing = False
 video_text = ""
 pattern_scored = False  # Flag to track if current pattern has been scored
@@ -217,7 +218,8 @@ def generate_pattern(difficulty, last_stump_pos=None, total_patterns_played=0):
             for pos in available_positions:
                 # Calculate Manhattan distance
                 distance = abs(pos[0] - last_stump_pos[0]) + abs(pos[1] - last_stump_pos[1])
-                if distance >= 2:  # At least 2 Manhattan distance away
+                
+                if distance <= 2:  # At most 2 Manhattan distance away
                     reachable_positions.append(pos)
             
             # If no reachable positions, fall back to all available positions
@@ -248,7 +250,7 @@ def handle_mouse_click(pos):
     tile_height = grid_height // 3
     
     grid_x = pos[0] // tile_width
-    grid_y = ceil(pos[1] / tile_height)
+    grid_y = pos[1] // tile_height
     
     # Check if tile (2, 2) was clicked (3rd column, 3rd row based on zero index)
     if grid_x == 2 and grid_y == 2:
@@ -371,33 +373,39 @@ def draw_grid_area():
     # Draw grid area on main screen
     screen.blit(grid_surface, (0, 0))
 
+def play_looping_background_video():
+    """Play background video in a loop using mpv in a non-blocking thread"""
+    try:
+        subprocess.Popen([
+            "mpv",
+            "--loop",
+            "--fs",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            "--really-quiet",
+            "--geometry=0x0+0+0",
+            str(BACKGROUND_VIDEO)
+        ])
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback: just continue without background video
+        pass
+
 def end_game(won):
     """End the game and show appropriate video"""
     global game_state, game_over_timer, video_playing
     game_state = GAME_OVER
     game_over_timer = pygame.time.get_ticks()
     
+    # Stop background video
+    subprocess.run(["pkill", "mpv"])
+    time.sleep(0.2)  # Optional short delay
+    
     if won:
         play_win_video()
     else:
         play_lose_video()
 
-def play_background_video():
-    """Play background video in the top 80% of screen"""
-    try:
-        # Use mpv to play video in the top portion of screen
-        subprocess.run([
-            "mpv", 
-            "--x", str(screen_width),           # Width
-            "--y", str(grid_height),            # Height (top 80%)
-            "--no-audio",                       # Disable sound
-            "--really-quiet",                   # Suppress terminal messages
-            "--loop-file",                      # Loop indefinitely
-            str(BACKGROUND_VIDEO)
-        ], timeout=1)  # Short timeout to check if it starts
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: just continue without background video
-        pass
 
 def show_splash_screen():
     """Show splash screen in fullscreen"""
@@ -486,7 +494,7 @@ def run_desktop_game():
     """Main game loop for desktop gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
     global score, hits, misses, current_difficulty, pattern_scored, video_playing
-    global pattern_interval, game_over_timer
+    global pattern_interval, game_over_timer, last_stump_pos, total_patterns_played
     
     running = True
     while running:
@@ -515,6 +523,7 @@ def run_desktop_game():
                     active_tiles = {}  # Clear the center tile
                     pattern_scored = False
                     video_playing = False
+                    last_stump_pos = None  # Initialize last_stump_pos
 
         # Handle game over timer
         if game_state == GAME_OVER:
@@ -548,8 +557,12 @@ def run_desktop_game():
             
             # Update pattern every pattern_interval
             if current_time - pattern_timer > pattern_interval:
-                active_tiles = generate_pattern(current_difficulty, last_stump_pos)
-                last_stump_pos = [pos for pos, t in active_tiles.items() if t == "stump"][0]
+                total_patterns_played += 1
+                active_tiles = generate_pattern(current_difficulty, last_stump_pos, total_patterns_played)
+                # Update last_stump_pos with the new stump position
+                stump_positions = [pos for pos, t in active_tiles.items() if t == "stump"]
+                if stump_positions:
+                    last_stump_pos = stump_positions[0]
 
                 pattern_timer = current_time
                 pattern_scored = False  # Reset the scoring flag for the new pattern
@@ -614,8 +627,9 @@ def run_arduino_game():
                 pattern_scored = False
                 video_playing = False
                 
-                # Start background video
-                play_background_video()
+                # Start background video in a non-blocking thread
+                video_thread = threading.Thread(target=play_looping_background_video, daemon=True)
+                video_thread.start()
         
         elif game_state == PLAYING_GAME:
             # Check for tile presses using Arduino
