@@ -5,6 +5,9 @@ import time
 import random
 import threading
 from pathlib import Path
+
+from pattern_logic import generate_pattern
+from score_tracker import ScoreTracker
 from tile_logic import draw_tile_grid #, get_pressed_tile
 from video_player import play_fullscreen_video
 from tile_comm import initialize_arduino, light_tile, turn_off_all_tiles
@@ -49,16 +52,13 @@ difficulty_timer = 0
 difficulty_interval = 12000  # 12 seconds in milliseconds
 current_difficulty = 1
 max_difficulty = 5
-score = 0
 game_over_timer = 0
 game_over_duration = 4000  # 4 seconds for score display
 game_start_time = 0
 game_duration = 120000  # 2 minute in milliseconds
 video_playing = False
 video_text = ""
-pattern_scored = False  # Flag to track if current pattern has been scored
-hits = 0  # Track number of hits
-misses = 0  # Track number of misses
+tracker = ScoreTracker()
 intro_duration = 7000  # 7 seconds for intro video
 win_lose_duration = 5000  # 5 seconds for win/lose videos
 
@@ -161,83 +161,7 @@ def play_lose_video():
     finally:
         video_playing = False
 
-def generate_pattern(difficulty, last_stump_pos=None, total_patterns_played=0):
-    """
-    Generate a tile pattern for a 3x5 grid based on difficulty.
-    - Always at least one "stump" and one "rock"
-    - Total number of tiles is 2 to 4
-    - At low difficulty, more stumps than rocks
-    - At high difficulty, more rocks than stumps
-    - Never place two types on the same tile
-    - Never exceed 4 lit tiles total
-    - Valid positions: (row, col) with row in 0-2, col in 0-4
-    - New stump must be different from last stump position
-    - New stump must be at least 2 Manhattan distance away (except in last 3 patterns)
-    - Allow 1-step diagonals (Manhattan distance = 2)
-    - In last 3 patterns, drop distance restriction entirely
-    """
-    rows, cols = 3, 5
-    all_positions = [(r, c) for r in range(rows) for c in range(cols)]
 
-    # Determine total number of tiles (2 to 4)
-    # At low difficulty, fewer tiles; at high, more
-    min_tiles = 2
-    max_tiles = 4
-    # Scale number of tiles with difficulty (1 = easy, max_difficulty = hard)
-    num_tiles = min_tiles + (max_tiles - min_tiles) * (difficulty - 1) // (max_difficulty - 1)
-    num_tiles = max(min(num_tiles, max_tiles), min_tiles)
-
-    # Always at least one stump and one rock
-    # Decide how many of each
-    if difficulty <= (max_difficulty // 2):
-        # Low difficulty: more stumps
-        num_stumps = max(1, num_tiles - 1)
-        num_rocks = num_tiles - num_stumps
-    else:
-        # High difficulty: more rocks
-        num_rocks = max(1, num_tiles - 1)
-        num_stumps = num_tiles - num_rocks
-
-    # Filter available positions for stump based on last stump position
-    available_positions = all_positions.copy()
-    
-    if last_stump_pos is not None:
-        # Remove the last stump position to avoid reusing it
-        if last_stump_pos in available_positions:
-            available_positions.remove(last_stump_pos)
-        
-        # Check if we're in the last 3 patterns (drop distance restriction)
-        # Assuming game duration is 60 seconds and pattern interval is 3-1.5 seconds
-        # Roughly 20-40 patterns per game, so last 3 patterns would be around patterns 17+
-        is_last_3_patterns = total_patterns_played >= 17
-        
-        if not is_last_3_patterns:
-            # Filter positions to only those with Manhattan distance >= 2
-            # This allows 1-step diagonals (distance = 2) but prevents adjacent moves
-            reachable_positions = []
-            for pos in available_positions:
-                # Calculate Manhattan distance
-                distance = abs(pos[0] - last_stump_pos[0]) + abs(pos[1] - last_stump_pos[1])
-                
-                if distance <= 2:  # At most 2 Manhattan distance away
-                    reachable_positions.append(pos)
-            
-            # If no reachable positions, fall back to all available positions
-            if reachable_positions:
-                available_positions = reachable_positions
-
-    # Randomly select unique positions for stumps and rocks
-    positions = random.sample(available_positions, num_tiles)
-    stump_positions = positions[:num_stumps]
-    rock_positions = positions[num_stumps:]
-
-    pattern = {}
-    for pos in stump_positions:
-        pattern[pos] = "stump"
-    for pos in rock_positions:
-        pattern[pos] = "rock"
-
-    return pattern
 
 def handle_mouse_click(pos):
     """Handle mouse clicks and return True if tile (2, 2) was clicked"""
@@ -312,9 +236,9 @@ def draw_ui_area():
         # Show game info
         font = pygame.font.Font(None, 32)
         difficulty_text = font.render(f"Level: {current_difficulty}", True, (255, 255, 255))
-        score_text = font.render(f"Score: {score}", True, (255, 255, 255))
-        hits_text = font.render(f"Hits: {hits}", True, (255, 255, 255))
-        misses_text = font.render(f"Misses: {misses}", True, (255, 255, 255))
+        score_text = font.render(f"Score: {tracker.score}", True, (255, 255, 255))
+        hits_text = font.render(f"Hits: {tracker.hits}", True, (255, 255, 255))
+        misses_text = font.render(f"Misses: {tracker.misses}", True, (255, 255, 255))
         
         # Calculate remaining time
         remaining_time = max(0, game_duration - (pygame.time.get_ticks() - game_start_time))
@@ -346,13 +270,13 @@ def draw_ui_area():
         else:
             # Show final score and stats
             font = pygame.font.Font(None, 48)
-            score_text = font.render(f"Final Score: {score}", True, (255, 255, 255))
+            score_text = font.render(f"Final Score: {tracker.score}", True, (255, 255, 255))
             score_rect = score_text.get_rect(center=(ui_width // 2, ui_height // 2 - 60))
             ui_surface.blit(score_text, score_rect)
             
             stats_font = pygame.font.Font(None, 32)
-            hits_text = stats_font.render(f"Hits: {hits}", True, (0, 255, 0))
-            misses_text = stats_font.render(f"Misses: {misses}", True, (255, 0, 0))
+            hits_text = stats_font.render(f"Hits: {tracker.hits}", True, (0, 255, 0))
+            misses_text = stats_font.render(f"Misses: {tracker.misses}", True, (255, 0, 0))
             hits_rect = hits_text.get_rect(center=(ui_width // 2, ui_height // 2 + 20))
             misses_rect = misses_text.get_rect(center=(ui_width // 2, ui_height // 2 + 60))
             ui_surface.blit(hits_text, hits_rect)
@@ -437,9 +361,9 @@ def show_final_score_fullscreen():
     font_medium = pygame.font.Font(None, 48)
     font_small = pygame.font.Font(None, 36)
     
-    score_text = font_large.render(f"Final Score: {score}", True, (255, 255, 255))
-    hits_text = font_medium.render(f"Hits: {hits}", True, (0, 255, 0))
-    misses_text = font_medium.render(f"Misses: {misses}", True, (255, 0, 0))
+    score_text = font_large.render(f"Final Score: {tracker.score}", True, (255, 255, 255))
+    hits_text = font_medium.render(f"Hits: {tracker.hits}", True, (0, 255, 0))
+    misses_text = font_medium.render(f"Misses: {tracker.misses}", True, (255, 0, 0))
     instruction = font_small.render("Press any key to play again", True, (200, 200, 200))
     
     score_rect = score_text.get_rect(center=(screen_width // 2, screen_height // 2 - 100))
@@ -493,7 +417,7 @@ def draw_mini_grid():
 def run_desktop_game():
     """Main game loop for desktop gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
-    global score, hits, misses, current_difficulty, pattern_scored, video_playing
+    global current_difficulty, video_playing
     global pattern_interval, game_over_timer, last_stump_pos, total_patterns_played
     
     running = True
@@ -516,12 +440,9 @@ def run_desktop_game():
                     pattern_timer = current_time
                     difficulty_timer = current_time
                     game_start_time = current_time
-                    score = 0
-                    hits = 0
-                    misses = 0
+                    tracker.reset()
                     current_difficulty = 1
                     active_tiles = {}  # Clear the center tile
-                    pattern_scored = False
                     video_playing = False
                     last_stump_pos = None  # Initialize last_stump_pos
 
@@ -540,11 +461,12 @@ def run_desktop_game():
         # Update game logic
         if game_state == PLAYING_GAME:
             # Check for tile presses
-            check_tile_press()
+            pressed_tile = get_pressed_tile()
+            tracker.check_tile_press(pressed_tile, active_tiles)
             
             # Check if game time is up (1 minute)
             if current_time - game_start_time >= game_duration:
-                won = score > 0
+                won = tracker.score > 0
                 end_game(won)
                 continue
             
@@ -565,7 +487,7 @@ def run_desktop_game():
                     last_stump_pos = stump_positions[0]
 
                 pattern_timer = current_time
-                pattern_scored = False  # Reset the scoring flag for the new pattern
+                tracker.pattern_scored = False  # Reset the scoring flag for the new pattern
         
         # Draw everything
         screen.fill((0, 0, 0))  # Black background
@@ -579,7 +501,7 @@ def run_desktop_game():
 def run_arduino_game():
     """Main game loop for Arduino-based gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
-    global score, hits, misses, current_difficulty, pattern_scored, video_playing
+    global current_difficulty, video_playing
     global pattern_interval, game_over_timer
     
     # Initialize Arduino connection
@@ -619,12 +541,9 @@ def run_arduino_game():
                 pattern_timer = current_time
                 difficulty_timer = current_time
                 game_start_time = current_time
-                score = 0
-                hits = 0
-                misses = 0
+                tracker.reset()
                 current_difficulty = 1
                 active_tiles = {}  # Clear the center tile
-                pattern_scored = False
                 video_playing = False
                 
                 # Start background video in a non-blocking thread
@@ -633,11 +552,12 @@ def run_arduino_game():
         
         elif game_state == PLAYING_GAME:
             # Check for tile presses using Arduino
-            check_tile_press()
+            pressed_tile = get_pressed_tile()
+            tracker.check_tile_press(pressed_tile, active_tiles)
             
             # Check if game time is up (1 minute)
             if current_time - game_start_time >= game_duration:
-                won = score > 0
+                won = tracker.score > 0
                 end_game(won)
                 continue
             
@@ -670,7 +590,7 @@ def run_arduino_game():
                             light_tile(row, col, "dim")  # Dim for background
                 
                 pattern_timer = current_time
-                pattern_scored = False  # Reset the scoring flag for the new pattern
+                tracker.pattern_scored = False  # Reset the scoring flag for the new pattern
             
             # Draw gameplay screen
             screen.fill((0, 0, 0))  # Black background
