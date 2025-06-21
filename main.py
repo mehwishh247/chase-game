@@ -9,7 +9,7 @@ from pathlib import Path
 from pattern_logic import generate_pattern
 from score_tracker import ScoreTracker
 from tile_logic import draw_tile_grid #, get_pressed_tile
-from video_player import play_fullscreen_video
+# from video_player import play_fullscreen_video
 from tile_comm import initialize_arduino, light_tile, turn_off_all_tiles
 
 pygame.init()
@@ -287,9 +287,14 @@ def draw_ui_area():
 
 def draw_grid_area():
     """Draw the main tile grid in the top 80% of screen"""
-    grid_surface = pygame.Surface((grid_width, grid_height))
+    # Calculate padding to center the grid
+    grid_padding = 200  # Add 200 pixels padding on each side
+    centered_grid_width = grid_width - (2 * grid_padding)
+    centered_grid_height = grid_height
+    
+    grid_surface = pygame.Surface((centered_grid_width, centered_grid_height))
     draw_tile_grid(grid_surface, active_tiles)
-    screen.blit(grid_surface, (0, 0))
+    screen.blit(grid_surface, (grid_padding, 0))
 
 def play_looping_background_video():
     """Play background video in a loop using mpv in a non-blocking thread"""
@@ -496,7 +501,7 @@ def run_arduino_game():
     """Main game loop for Arduino-based gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
     global current_difficulty, video_playing
-    global pattern_interval, game_over_timer
+    global pattern_interval, game_over_timer, last_stump_pos, total_patterns_played
     
     # Initialize Arduino connection
     initialize_arduino()
@@ -539,6 +544,8 @@ def run_arduino_game():
                 current_difficulty = 1
                 active_tiles = {}  # Clear the center tile
                 video_playing = False
+                last_stump_pos = None  # Initialize last_stump_pos
+                total_patterns_played = 0  # Initialize total_patterns_played
                 
                 # Start background video in a non-blocking thread
                 video_thread = threading.Thread(target=play_looping_background_video, daemon=True)
@@ -564,11 +571,18 @@ def run_arduino_game():
             
             # Update pattern every pattern_interval
             if current_time - pattern_timer > pattern_interval:
+                total_patterns_played += 1
+                
                 # Turn off all tiles first
                 turn_off_all_tiles()
                 
                 # Generate new pattern
-                active_tiles = generate_pattern(current_difficulty, last_stump_pos)
+                active_tiles = generate_pattern(current_difficulty, last_stump_pos, total_patterns_played)
+                
+                # Update last_stump_pos with the new stump position
+                stump_positions = [pos for pos, t in active_tiles.items() if t == "stump"]
+                if stump_positions:
+                    last_stump_pos = stump_positions[0]
                 
                 # Light up tiles according to pattern
                 for (row, col), tile_type in active_tiles.items():
