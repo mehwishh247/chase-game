@@ -28,6 +28,11 @@ dist/
 build/
 *.egg-info/
 
+# Video + Assets (optional: ignore large media unless needed)
+assets/videos/*.mp4
+assets/videos/*.webm
+assets/audio/
+assets/raw/
 
 # Arduino compiled files (if used)
 *.hex
