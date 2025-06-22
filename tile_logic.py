@@ -38,8 +38,8 @@ def draw_tile_grid(screen, active_tiles):
     # Darker gray color mapping
     colors = {
         "default": (160, 160, 160),  # Darker gray (unlit)
-        "stump": (190, 190, 190),    # Lighter gray (safe)
-        "rock": (130, 130, 130),     # Darkest gray (obstacle)
+        "stump": (139, 69, 19),      # Brown (safe)
+        "rock": (105, 105, 105),     # Darker gray (obstacle)
         "cue": (139, 69, 19),       # Brown for the cue tile
     }
 
