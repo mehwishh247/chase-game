@@ -12,27 +12,59 @@ from tile_logic import draw_tile_grid #, get_pressed_tile
 # from video_player import play_fullscreen_video
 from tile_comm import initialize_arduino, light_tile, turn_off_all_tiles
 
+
+
 pygame.init()
 
 # Set up paths for cross-platform compatibility
 ASSETS_DIR = Path(__file__).parent / "assets"
+IMAGES_DIR = ASSETS_DIR / "images"
+LOGO_IMAGE = IMAGES_DIR / "logo.png"
 VIDEOS_DIR = ASSETS_DIR / "videos"
 INTRO_VIDEO = VIDEOS_DIR / "intro.mp4"
 WIN_VIDEO = VIDEOS_DIR / "win.mp4"
 LOSE_VIDEO = VIDEOS_DIR / "lose.mp4"
 BACKGROUND_VIDEO = VIDEOS_DIR / "background.mp4"  # Add background video path
 
-# Set up 16:9 aspect ratio screen
-screen_width = 1920
-screen_height = 1080
+# Get display info to set game window size
+info = pygame.display.Info()
+display_width = info.current_w
+display_height = info.current_h
+
+# Maintain a 9:16 portrait aspect ratio
+aspect_ratio = 9 / 16
+
+# Calculate screen dimensions to fit display while maintaining aspect ratio
+if (display_height * aspect_ratio) <= display_width:
+    # Fit to display height
+    screen_height = display_height
+    screen_width = int(display_height * aspect_ratio)
+else:
+    # Fit to display width
+    screen_width = display_width
+    screen_height = int(display_width / aspect_ratio)
+
 screen = pygame.display.set_mode((screen_width, screen_height))
 clock = pygame.time.Clock()
 
-# Calculate areas: Grid covers full width and top 80% height, UI in bottom 20%
-grid_width = screen_width
-grid_height = int(screen_height * 0.8)
-ui_width = screen_width
-ui_height = screen_height - grid_height
+# Calculate areas for portrait mode
+video_height = int(screen_height * 0.33)
+game_area_height = screen_height - video_height
+game_area_y_start = video_height
+
+# Layout within the bottom 66% game area
+logo_height = int(game_area_height * 0.20)  # Made logo bigger
+ui_height = int(game_area_height * 0.30)    # Made scoreboard taller
+grid_height = game_area_height - logo_height - ui_height
+
+# Y positions
+logo_y_start = game_area_y_start
+grid_y_start = logo_y_start + logo_height # Grid starts right after logo
+ui_y_start = grid_y_start + grid_height - 150 # Move scoreboard up more
+
+# Padding
+side_padding = 75 # Increased to make scoreboard less wide
+bottom_padding = int(side_padding * 1.5)
 
 # Game states
 WAITING_FOR_START = "waiting_for_start"
@@ -45,7 +77,7 @@ SHOWING_FINAL_SCORE = "showing_final_score"  # New state for final score display
 game_state = WAITING_FOR_START
 last_stump_pos = None
 total_patterns_played = 0
-active_tiles = {(2, 2): "stump"}  # Initialize with center tile as stump
+active_tiles = {(2, 2): "cue"}  # Initialize with center tile as cue
 pattern_timer = 0
 pattern_interval = 3000  # 3 seconds in milliseconds
 difficulty_timer = 0
@@ -99,78 +131,71 @@ def get_pressed_tile():
     return None
 
 def play_intro_video():
-    """Play intro video in fullscreen using mpv, with fallback text"""
+    """Play intro video in the top part of the screen, with fallback text"""
     global video_playing, video_text
     video_playing = True
     video_text = "Playing intro..."
     
     try:
-        # Use mpv to play video in fullscreen
-        subprocess.run([
+        # Use mpv for video playback in the top 33% of the screen
+        subprocess.Popen([
             "mpv", 
-            "--fs",           # Fullscreen
-            "--no-audio",     # Disable sound
-            "--really-quiet", # Suppress terminal messages
-            str(INTRO_VIDEO)
-        ], timeout=7.5)  # Slightly longer timeout than video duration
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: display text for 7 seconds
-        time.sleep(7)
-    finally:
-        video_playing = False
+            f"--geometry={screen_width}x{video_height}+0+0",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            str(INTRO_VIDEO),
+        ])
+    except FileNotFoundError:
+        # Fallback if mpv is not installed
+        video_text = ""
 
 def play_win_video():
-    """Play win video in fullscreen using mpv, with fallback text"""
+    """Play win video in the top part of the screen, with fallback text"""
     global video_playing, video_text
     video_playing = True
-    video_text = "Playing win video..."
+    video_text = "You won! Playing win video..."
     
     try:
-        # Use mpv to play video in fullscreen
-        subprocess.run([
+        subprocess.Popen([
             "mpv", 
-            "--fs",           # Fullscreen
-            "--no-audio",     # Disable sound
-            "--really-quiet", # Suppress terminal messages
-            str(WIN_VIDEO)
-        ], timeout=4.0)  # Slightly longer timeout than video duration
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: display text for 3.5 seconds
-        time.sleep(3.5)
-    finally:
-        video_playing = False
+            f"--geometry={screen_width}x{video_height}+0+0",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            str(WIN_VIDEO),
+        ])
+    except FileNotFoundError:
+        video_text = ""
 
 def play_lose_video():
-    """Play lose video in fullscreen using mpv, with fallback text"""
+    """Play lose video in the top part of the screen, with fallback text"""
     global video_playing, video_text
     video_playing = True
-    video_text = "Playing lose video..."
+    video_text = "You lost. Playing lose video..."
     
     try:
-        # Use mpv to play video in fullscreen
-        subprocess.run([
+        subprocess.Popen([
             "mpv", 
-            "--fs",           # Fullscreen
-            "--no-audio",     # Disable sound
-            "--really-quiet", # Suppress terminal messages
-            str(LOSE_VIDEO)
-        ], timeout=4.0)  # Slightly longer timeout than video duration
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: display text for 3.5 seconds
-        time.sleep(3.5)
-    finally:
-        video_playing = False
+            f"--geometry={screen_width}x{video_height}+0+0",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            str(LOSE_VIDEO),
+        ])
+    except FileNotFoundError:
+        video_text = ""
 
 
 
 def handle_mouse_click(pos):
     """Handle mouse clicks and return True if tile (2, 2) was clicked"""
     # Convert screen position to grid position (only within grid area)
-    if pos[0] >= grid_width:  # Click is in UI area
+    if pos[0] >= screen_width:  # Click is in UI area
         return False
     
     # Calculate tile size based on grid dimensions
-    tile_width = grid_width // 5
+    tile_width = screen_width // 5
     tile_height = grid_height // 3
     
     grid_x = pos[0] // tile_width
@@ -206,113 +231,86 @@ def check_tile_press():
             misses += 1
             pattern_scored = True  # Mark this pattern as scored
 
+def draw_logo_area():
+    """Draws the logo from an image file."""
+    try:
+        logo_img = pygame.image.load(LOGO_IMAGE)
+        logo_img = pygame.transform.scale(logo_img, (logo_height, logo_height)) # Assuming square logo for scaling
+        logo_rect = logo_img.get_rect(center=(screen_width // 2, logo_y_start + logo_height // 2))
+        screen.blit(logo_img, logo_rect)
+    except pygame.error:
+        # Fallback to text if image fails to load
+        logo_font = pygame.font.Font(None, 40)
+        logo_text = logo_font.render("Logo Image Not Found", True, (255, 0, 0))
+        logo_rect = logo_text.get_rect(center=(screen_width // 2, logo_y_start + logo_height // 2))
+        screen.blit(logo_text, logo_rect)
+
 def draw_ui_area():
-    """Draw the UI area on the right side of the screen"""
-    # Fill UI area with dark background
-    ui_surface = pygame.Surface((ui_width, ui_height))
-    ui_surface.fill((20, 20, 20))
+    """Draw the UI area at the bottom of the screen"""
+    ui_surface_width = screen_width - (2 * side_padding)
+    ui_surface_height = ui_height - bottom_padding
+    ui_surface = pygame.Surface((ui_surface_width, ui_surface_height), pygame.SRCALPHA)
+    
+    # Draw the rounded background
+    corner_radius = 15
+    pygame.draw.rect(ui_surface, (169, 169, 169), ui_surface.get_rect(), border_radius=corner_radius)
     
     if game_state == WAITING_FOR_START:
         # Show start instructions
         font = pygame.font.Font(None, 36)
-        text = font.render("Step on the center tile", True, (255, 255, 255))
+        text1 = font.render("Press the center tile", True, (255, 255, 255))
         text2 = font.render("to start the game!", True, (255, 255, 255))
-        
-        text_rect = text.get_rect(center=(ui_width // 2, ui_height // 2 - 30))
-        text2_rect = text2.get_rect(center=(ui_width // 2, ui_height // 2 + 10))
-        
-        ui_surface.blit(text, text_rect)
+        text1_rect = text1.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 - 20))
+        text2_rect = text2.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 + 20))
+        ui_surface.blit(text1, text1_rect)
         ui_surface.blit(text2, text2_rect)
         
-    elif game_state == PLAYING_INTRO:
-        print('video playing')
-        # Show intro video text
-        font = pygame.font.Font(None, 36)
-        text = font.render(video_text, True, (255, 255, 255))
-        text_rect = text.get_rect(center=(ui_width // 2, ui_height // 2))
-        ui_surface.blit(text, text_rect)
-        
     elif game_state == PLAYING_GAME:
-        # Show game info
-        font = pygame.font.Font(None, 32)
-        difficulty_text = font.render(f"Level: {current_difficulty}", True, (255, 255, 255))
+        # Display score and timer
+        font = pygame.font.Font(None, 50)
         score_text = font.render(f"Score: {tracker.score}", True, (255, 255, 255))
-        hits_text = font.render(f"Hits: {tracker.hits}", True, (255, 255, 255))
-        misses_text = font.render(f"Misses: {tracker.misses}", True, (255, 255, 255))
-        
-        # Calculate remaining time
-        remaining_time = max(0, game_duration - (pygame.time.get_ticks() - game_start_time))
-        minutes = remaining_time // 60000
-        seconds = (remaining_time % 60000) // 1000
-        time_text = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, (255, 255, 255))
-        
-        ui_surface.blit(difficulty_text, (20, 50))
-        ui_surface.blit(score_text, (20, 100))
-        ui_surface.blit(hits_text, (20, 150))
-        ui_surface.blit(misses_text, (20, 200))
-        ui_surface.blit(time_text, (20, 250))
-        
-        # Show instructions
-        instruction_font = pygame.font.Font(None, 28)
-        instruction1 = instruction_font.render("Step on the stumps!", True, (200, 200, 200))
-        instruction2 = instruction_font.render("Avoid the rocks!", True, (200, 200, 200))
-        
-        ui_surface.blit(instruction1, (20, ui_height - 100))
-        ui_surface.blit(instruction2, (20, ui_height - 70))
-        
-    elif game_state == GAME_OVER:
-        # Show video playing text or final score
-        if video_playing:
-            font = pygame.font.Font(None, 36)
-            text = font.render(video_text, True, (255, 255, 255))
-            text_rect = text.get_rect(center=(ui_width // 2, ui_height // 2))
-            ui_surface.blit(text, text_rect)
-        else:
-            # Show final score and stats
+        score_rect = score_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2))
+        ui_surface.blit(score_text, score_rect)
+
+    elif game_state == SHOWING_FINAL_SCORE:
+        # Draw final score, hits, and misses
             font = pygame.font.Font(None, 48)
             score_text = font.render(f"Final Score: {tracker.score}", True, (255, 255, 255))
-            score_rect = score_text.get_rect(center=(ui_width // 2, ui_height // 2 - 60))
+            score_rect = score_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 - 60))
             ui_surface.blit(score_text, score_rect)
             
             stats_font = pygame.font.Font(None, 32)
             hits_text = stats_font.render(f"Hits: {tracker.hits}", True, (0, 255, 0))
             misses_text = stats_font.render(f"Misses: {tracker.misses}", True, (255, 0, 0))
-            hits_rect = hits_text.get_rect(center=(ui_width // 2, ui_height // 2 + 20))
-            misses_rect = misses_text.get_rect(center=(ui_width // 2, ui_height // 2 + 60))
+            hits_rect = hits_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 + 20))
+            misses_rect = misses_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 + 60))
             ui_surface.blit(hits_text, hits_rect)
             ui_surface.blit(misses_text, misses_rect)
-    
+
     # Draw UI area on main screen
-    screen.blit(ui_surface, (0, grid_height))
+    screen.blit(ui_surface, (side_padding, ui_y_start))
 
 def draw_grid_area():
-    """Draw the main tile grid in the top 80% of screen"""
-    # Calculate padding to center the grid
-    grid_padding = 200  # Add 200 pixels padding on each side
-    centered_grid_width = grid_width - (2 * grid_padding)
-    centered_grid_height = grid_height
-    
-    grid_surface = pygame.Surface((centered_grid_width, centered_grid_height))
+    """Draw the main tile grid in its designated area"""
+    grid_surface_width = screen_width - (2 * side_padding)
+    grid_surface = pygame.Surface((grid_surface_width, grid_height))
     draw_tile_grid(grid_surface, active_tiles)
-    screen.blit(grid_surface, (grid_padding, 0))
+    screen.blit(grid_surface, (side_padding, grid_y_start))
 
 def play_looping_background_video():
-    """Play background video in a loop using mpv in a non-blocking thread"""
+    """Play background video in a loop using mpv in the top video area"""
     try:
         subprocess.Popen([
             "mpv",
+            f"--geometry={screen_width}x{video_height}+0+0",
             "--loop",
-            "--fs",
             "--no-border",
             "--ontop",
             "--no-terminal",
-            "--really-quiet",
-            "--geometry=0x0+0+0",
-            str(BACKGROUND_VIDEO)
+            str(BACKGROUND_VIDEO),
         ])
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback: just continue without background video
-        pass
+    except FileNotFoundError:
+        print("mpv not found. Cannot play background video.")
 
 def end_game(won):
     """End the game and show appropriate video"""
@@ -377,42 +375,6 @@ def show_final_score_fullscreen():
     
     pygame.display.flip()
 
-def draw_mini_grid():
-    """Draw a small version of the tile grid in the bottom 20% of screen"""
-    # Calculate mini grid dimensions
-    mini_grid_width = screen_width // 3  # Make it smaller
-    mini_grid_height = ui_height // 2
-    mini_tile_width = mini_grid_width // 5
-    mini_tile_height = mini_grid_height // 3
-    
-    # Position mini grid in center of bottom area
-    mini_grid_x = (screen_width - mini_grid_width) // 2
-    mini_grid_y = grid_height + (ui_height - mini_grid_height) // 2
-    
-    # Draw mini grid background
-    mini_surface = pygame.Surface((mini_grid_width, mini_grid_height))
-    mini_surface.fill((40, 40, 40))
-    
-    # Draw mini tiles
-    for row in range(3):
-        for col in range(5):
-            tile_x = col * mini_tile_width
-            tile_y = row * mini_tile_height
-            
-            if (row, col) in active_tiles:
-                if active_tiles[(row, col)] == "stump":
-                    color = (0, 255, 0)  # Green for stumps
-                else:
-                    color = (255, 0, 0)  # Red for rocks
-            else:
-                color = (80, 80, 80)  # Gray for empty tiles
-            
-            pygame.draw.rect(mini_surface, color, 
-                           (tile_x, tile_y, mini_tile_width - 2, mini_tile_height - 2))
-    
-    # Draw mini grid on main screen
-    screen.blit(mini_surface, (mini_grid_x, mini_grid_y))
-
 def run_desktop_game():
     """Main game loop for desktop gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
@@ -445,6 +407,10 @@ def run_desktop_game():
                     video_playing = False
                     last_stump_pos = None  # Initialize last_stump_pos
 
+                    # Start background video in a non-blocking thread
+                    video_thread = threading.Thread(target=play_looping_background_video, daemon=True)
+                    video_thread.start()
+
         # Handle game over timer
         if game_state == GAME_OVER:
             if video_playing:
@@ -454,7 +420,7 @@ def run_desktop_game():
                     game_over_timer = current_time  # Reset timer for score display
             elif current_time - game_over_timer > game_over_duration:
                 game_state = WAITING_FOR_START
-                active_tiles = {(2, 2): "stump"}  # Highlight center tile
+                active_tiles = {(2, 2): "cue"}  # Highlight center tile
                 video_playing = False
         
         # Update game logic
@@ -491,6 +457,7 @@ def run_desktop_game():
         # Draw everything
         screen.fill((0, 0, 0))  # Black background
         
+        draw_logo_area()
         draw_grid_area()
         draw_ui_area()
         
@@ -519,7 +486,7 @@ def run_arduino_game():
             elif event.type == pygame.KEYDOWN and game_state == SHOWING_FINAL_SCORE:
                 # Any key press returns to splash screen
                 game_state = WAITING_FOR_START
-                active_tiles = {(2, 2): "stump"}  # Highlight center tile
+                active_tiles = {(2, 2): "cue"}  # Highlight center tile
                 video_playing = False
 
         # Handle different game states
@@ -603,8 +570,9 @@ def run_arduino_game():
             # Draw gameplay screen
             screen.fill((0, 0, 0))  # Black background
             
-            # Draw mini grid in bottom 20%
-            draw_mini_grid()
+            draw_logo_area()
+            # Draw grid
+            draw_grid_area()
             
             # Draw UI info in bottom area
             draw_ui_area()
