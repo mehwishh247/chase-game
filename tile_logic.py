@@ -40,7 +40,7 @@ def draw_tile_grid(screen, active_tiles):
         "default": (160, 160, 160),  # Darker gray (unlit)
         "stump": (190, 190, 190),    # Lighter gray (safe)
         "rock": (130, 130, 130),     # Darkest gray (obstacle)
-        "cue": (205, 133, 63),       # Orange-brown for the cue tile
+        "cue": (139, 69, 19),       # Brown for the cue tile
     }
 
     corner_radius = 15
