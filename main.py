@@ -1,33 +1,15 @@
 from math import ceil
 import pygame
+import subprocess
 import time
-import random
-import threading
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from pattern_logic import generate_pattern
 from score_tracker import ScoreTracker
 from tile_logic import draw_tile_grid #, get_pressed_tile
-from video_player import VideoPlayer
+# from video_player import play_fullscreen_video
 from tile_comm import initialize_arduino, light_tile, turn_off_all_tiles
-
-
-def _calculate_tile_height(grid_surface_width, grid_surface_height):
-    """Helper to calculate tile height based on grid area dimensions."""
-    rows, cols = 3, 5
-    tile_padding = 15
-    available_width = grid_surface_width - (tile_padding * 2)
-    available_height = grid_surface_height - (tile_padding * 2)
-
-    if available_width < 0 or available_height < 0:
-        return 0
-
-    h_from_width = (available_width - (cols - 1) * tile_padding) / (cols * 1.5)
-    h_from_height = (available_height - (rows - 1) * tile_padding) / rows
-    tile_height = min(h_from_width, h_from_height)
-    return tile_height if tile_height > 0 else 0
-
 
 pygame.init()
 
@@ -39,7 +21,6 @@ VIDEOS_DIR = ASSETS_DIR / "videos"
 INTRO_VIDEO = VIDEOS_DIR / "intro.mp4"
 WIN_VIDEO = VIDEOS_DIR / "win.mp4"
 LOSE_VIDEO = VIDEOS_DIR / "lose.mp4"
-BACKGROUND_VIDEO = VIDEOS_DIR / "background.mp4"  # Add background video path
 
 # Get display info to set game window size
 info = pygame.display.Info()
@@ -62,34 +43,23 @@ else:
 screen = pygame.display.set_mode((screen_width, screen_height))
 clock = pygame.time.Clock()
 
-# Initialize the video player
-video_player = VideoPlayer(screen)
-
 # Calculate areas for portrait mode
-video_height = int(screen_height * 0.33)
+video_height = int(screen_height * 0.17)  # Changed from 0.33 to 0.17
 game_area_height = screen_height - video_height
 game_area_y_start = video_height
 
-# Layout within the bottom 66% game area
-logo_height = int(game_area_height * 0.20)
-ui_height = int(game_area_height * 0.35)  # Make scoreboard taller
-side_padding = 75
-grid_surface_width = screen_width - (2 * side_padding)
-
-# Calculate spacing based on an estimate of grid height
-height_for_grid_and_spacing = game_area_height - logo_height - ui_height
-spacing = _calculate_tile_height(grid_surface_width, height_for_grid_and_spacing)
-if spacing == 0:  # Fallback
-    spacing = 20
-
-grid_height = height_for_grid_and_spacing - spacing
+# Layout within the bottom 83% game area
+logo_height = int(game_area_height * 0.20)  # Made logo bigger
+ui_height = int(game_area_height * 0.30)    # Made scoreboard taller
+grid_height = game_area_height - logo_height - ui_height
 
 # Y positions
 logo_y_start = game_area_y_start
-grid_y_start = logo_y_start + logo_height
-ui_y_start = grid_y_start + (grid_height // 1.5) + spacing
+grid_y_start = logo_y_start + logo_height # Grid starts right after logo
+ui_y_start = grid_y_start + grid_height - 150 # Move scoreboard up more
 
 # Padding
+side_padding = 75 # Increased to make scoreboard less wide
 bottom_padding = int(side_padding * 1.5)
 
 # Game states
@@ -98,6 +68,7 @@ PLAYING_INTRO = "playing_intro"
 PLAYING_GAME = "playing_game"
 GAME_OVER = "game_over"
 SHOWING_FINAL_SCORE = "showing_final_score"  # New state for final score display
+SHOWING_WIN_LOSE_TEXT = "showing_win_lose_text"  # New state for win/lose text display
 
 # Game variables
 game_state = WAITING_FOR_START
@@ -112,6 +83,8 @@ current_difficulty = 1
 max_difficulty = 5
 game_over_timer = 0
 game_over_duration = 4000  # 4 seconds for score display
+win_lose_text_timer = 0
+win_lose_text_duration = 3000  # 6 seconds for win/lose text display
 game_start_time = 0
 game_duration = 120000  # 2 minute in milliseconds
 video_playing = False
@@ -119,9 +92,6 @@ video_text = ""
 tracker = ScoreTracker()
 intro_duration = 7000  # 7 seconds for intro video
 win_lose_duration = 5000  # 5 seconds for win/lose videos
-
-# Tile types for different difficulties
-tile_types = ["green", "red", "blue", "yellow", "purple", "orange"]
 
 def get_pressed_tile():
     """
@@ -157,37 +127,61 @@ def get_pressed_tile():
     return None
 
 def play_intro_video():
-    """Play intro video in the top part of the screen, with fallback text"""
+    """Play intro video in fullscreen without stretching"""
     global video_playing, video_text
     video_playing = True
     video_text = "Playing intro..."
     
     try:
-        # Use mpv for video playback in the top 33% of the screen
-        video_player.play(INTRO_VIDEO)
+        # Use mpv for fullscreen video playback
+        subprocess.Popen([
+            "mpv", 
+            "--fullscreen",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            "--keep-open=no",
+            str(INTRO_VIDEO),
+        ])
     except FileNotFoundError:
         # Fallback if mpv is not installed
         video_text = ""
 
 def play_win_video():
-    """Play win video in the top part of the screen, with fallback text"""
+    """Play win video in fullscreen without stretching"""
     global video_playing, video_text
     video_playing = True
     video_text = "You won! Playing win video..."
     
     try:
-        video_player.play(WIN_VIDEO)
+        subprocess.Popen([
+            "mpv", 
+            "--fullscreen",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            "--keep-open=no",
+            str(WIN_VIDEO),
+        ])
     except FileNotFoundError:
         video_text = ""
 
 def play_lose_video():
-    """Play lose video in the top part of the screen, with fallback text"""
+    """Play lose video in fullscreen without stretching"""
     global video_playing, video_text
     video_playing = True
     video_text = "You lost. Playing lose video..."
     
     try:
-        video_player.play(LOSE_VIDEO)
+        subprocess.Popen([
+            "mpv", 
+            "--fullscreen",
+            "--no-border",
+            "--ontop",
+            "--no-terminal",
+            "--keep-open=no",
+            str(LOSE_VIDEO),
+        ])
     except FileNotFoundError:
         video_text = ""
 
@@ -195,68 +189,59 @@ def play_lose_video():
 
 def handle_mouse_click(pos):
     """Handle mouse clicks and return True if tile (2, 2) was clicked"""
-    # Define grid properties
+    # Check if click is within the grid area
+    if pos[1] < grid_y_start or pos[1] >= grid_y_start + grid_height:
+        return False
+    
+    # Account for side padding
+    adjusted_x = pos[0] - side_padding
+    if adjusted_x < 0 or adjusted_x >= screen_width - (2 * side_padding):
+        return False
+    
+    # Calculate tile size based on grid dimensions (matching tile_logic.py)
     grid_surface_width = screen_width - (2 * side_padding)
-    rows, cols = 3, 5
-    tile_padding = 15
-
-    # Calculate the space taken by tiles and padding
-    total_padding_x = (cols - 1) * tile_padding
-    total_padding_y = (rows - 1) * tile_padding
-
-    # Calculate tile dimensions based on a 3:2 aspect ratio
-    h_from_width = (grid_surface_width - total_padding_x) / (cols * 1.5)
-    h_from_height = (grid_height - total_padding_y) / rows
+    padding = 15  # Same as in tile_logic.py
+    
+    # Calculate tile dimensions
+    available_width = grid_surface_width - (padding * 2)
+    available_height = grid_height - (padding * 2)
+    
+    cols, rows = 5, 3
+    h_from_width = (available_width - (cols - 1) * padding) / (cols * 1.5)
+    h_from_height = (available_height - (rows - 1) * padding) / rows
+    
     tile_height = min(h_from_width, h_from_height)
     if tile_height < 0: tile_height = 0
     tile_width = tile_height * 1.5
     
     # Calculate grid content dimensions
-    grid_content_width = cols * tile_width + total_padding_x
-    grid_content_height = rows * tile_height + total_padding_y
-
-    # Calculate grid's top-left corner on the screen
-    grid_start_x_on_screen = side_padding + (grid_surface_width - grid_content_width) / 2
-    grid_start_y_on_screen = grid_y_start + tile_padding
-
-    # Get mouse position relative to the grid
-    relative_x = pos[0] - grid_start_x_on_screen
-    relative_y = pos[1] - grid_start_y_on_screen
-
-    # Determine which tile was clicked
-    if relative_x > 0 and relative_y > 0:
-        col = int(relative_x // (tile_width + tile_padding))
-        row = int(relative_y // (tile_height + tile_padding))
-        
+    grid_content_width = cols * tile_width + (cols - 1) * padding
+    grid_content_height = rows * tile_height + (rows - 1) * padding
+    start_x = (grid_surface_width - grid_content_width) / 2
+    start_y = padding
+    
+    # Convert click position to grid coordinates
+    click_x = adjusted_x - start_x
+    click_y = pos[1] - grid_y_start - start_y
+    
+    # Calculate grid position
+    if click_x < 0 or click_y < 0:
+        return False
+    
+    col = int(click_x // (tile_width + padding))
+    row = int(click_y // (tile_height + padding))
+    
+    # Check if click is within tile bounds
+    tile_x = col * (tile_width + padding)
+    tile_y = row * (tile_height + padding)
+    
+    if (click_x >= tile_x and click_x < tile_x + tile_width and 
+        click_y >= tile_y and click_y < tile_y + tile_height):
+        # Check if tile (2, 2) was clicked (center tile)
         if row == 2 and col == 2:
             return True
-
+    
     return False
-
-def check_tile_press():
-    """Check for tile presses and update score accordingly - only once per pattern"""
-    global score, active_tiles, pattern_scored, hits, misses
-    
-    # If this pattern has already been scored, don't score again
-    if pattern_scored:
-        return
-    
-    pressed_tile = get_pressed_tile()
-    if pressed_tile is not None:
-        # Check if the pressed tile is in active_tiles and is a stump
-        if pressed_tile in active_tiles:
-            if active_tiles[pressed_tile] == "stump":
-                score += 2  # Correct tile
-                hits += 1
-                pattern_scored = True  # Mark this pattern as scored
-            else:
-                score -= 1  # Wrong tile (rock)
-                misses += 1
-                pattern_scored = True  # Mark this pattern as scored
-        else:
-            score -= 1  # Pressed empty tile
-            misses += 1
-            pattern_scored = True  # Mark this pattern as scored
 
 def draw_logo_area():
     """Draws the logo from an image file."""
@@ -293,11 +278,24 @@ def draw_ui_area():
         ui_surface.blit(text2, text2_rect)
         
     elif game_state == PLAYING_GAME:
-        # Display score and timer
-        font = pygame.font.Font(None, 50)
-        score_text = font.render(f"Score: {tracker.score}", True, (255, 255, 255))
-        score_rect = score_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2))
+        # Display score, hits, and misses during gameplay
+        font_large = pygame.font.Font(None, 50)
+        font_medium = pygame.font.Font(None, 36)
+        
+        # Score at the top
+        score_text = font_large.render(f"Score: {tracker.score}", True, (255, 255, 255))
+        score_rect = score_text.get_rect(center=(ui_surface_width // 2, ui_surface_height // 2 - 30))
         ui_surface.blit(score_text, score_rect)
+        
+        # Hits and misses below
+        hits_text = font_medium.render(f"Hits: {tracker.hits}", True, (0, 255, 0))
+        misses_text = font_medium.render(f"Misses: {tracker.misses}", True, (255, 0, 0))
+        
+        hits_rect = hits_text.get_rect(center=(ui_surface_width // 2 - 80, ui_surface_height // 2 + 20))
+        misses_rect = misses_text.get_rect(center=(ui_surface_width // 2 + 80, ui_surface_height // 2 + 20))
+        
+        ui_surface.blit(hits_text, hits_rect)
+        ui_surface.blit(misses_text, misses_rect)
 
     elif game_state == SHOWING_FINAL_SCORE:
         # Draw final score, hits, and misses
@@ -324,26 +322,20 @@ def draw_grid_area():
     draw_tile_grid(grid_surface, active_tiles)
     screen.blit(grid_surface, (side_padding, grid_y_start))
 
-def play_looping_background_video():
-    """Play background video in a loop using mpv in the top video area"""
-    try:
-        video_player.play(BACKGROUND_VIDEO, loop=True)
-    except FileNotFoundError:
-        print("mpv not found. Cannot play background video.")
-
 def end_game(won):
     """End the game and show appropriate video"""
-    global game_state, game_over_timer
+    global game_state, game_over_timer, video_playing
     game_state = GAME_OVER
     game_over_timer = pygame.time.get_ticks()
     
-    video_player.stop() # Stop any currently playing video
+    # Stop background video
+    subprocess.run(["pkill", "mpv"])
     time.sleep(0.2)  # Optional short delay
     
     if won:
-        video_player.play(WIN_VIDEO)
+        play_win_video()
     else:
-        video_player.play(LOSE_VIDEO)
+        play_lose_video()
 
 
 def show_splash_screen():
@@ -393,10 +385,34 @@ def show_final_score_fullscreen():
     
     pygame.display.flip()
 
+def show_win_lose_text_fullscreen(won):
+    """Show win/lose text in fullscreen for 2 seconds after outro video"""
+    # Fill screen with dark background
+    screen.fill((20, 20, 20))
+    
+    # Draw win/lose message
+    font_large = pygame.font.Font(None, 72)
+    font_medium = pygame.font.Font(None, 48)
+    
+    if won:
+        message_text = font_large.render("YOU WIN!", True, (0, 255, 0))
+        score_text = font_medium.render(f"Final Score: {tracker.score}", True, (255, 255, 255))
+    else:
+        message_text = font_large.render("GAME OVER", True, (255, 0, 0))
+        score_text = font_medium.render(f"Final Score: {tracker.score}", True, (255, 255, 255))
+    
+    message_rect = message_text.get_rect(center=(screen_width // 2, screen_height // 2 - 50))
+    score_rect = score_text.get_rect(center=(screen_width // 2, screen_height // 2 + 50))
+    
+    screen.blit(message_text, message_rect)
+    screen.blit(score_text, score_rect)
+    
+    pygame.display.flip()
+
 def run_desktop_game():
     """Main game loop for desktop gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
-    global current_difficulty
+    global current_difficulty, video_playing
     global pattern_interval, game_over_timer, last_stump_pos, total_patterns_played
     
     running = True
@@ -412,7 +428,7 @@ def run_desktop_game():
             elif event.type == pygame.MOUSEBUTTONDOWN and game_state == WAITING_FOR_START:
                 if handle_mouse_click(event.pos):
                     game_state = PLAYING_INTRO
-                    video_player.play(INTRO_VIDEO)
+                    play_intro_video()
                     # Wait 2 seconds for intro text
                     pygame.time.wait(3000)
                     game_state = PLAYING_GAME
@@ -422,17 +438,33 @@ def run_desktop_game():
                     tracker.reset()
                     current_difficulty = 1
                     active_tiles = {}  # Clear the center tile
+                    video_playing = False
                     last_stump_pos = None  # Initialize last_stump_pos
-
-                    # Start background video
-                    video_player.play(BACKGROUND_VIDEO, loop=True)
 
         # Handle game over timer
         if game_state == GAME_OVER:
-            # Wait for video to finish
-            if not video_player.is_playing():
+            if video_playing:
+                # Wait for video to finish (outro video duration)
+                if current_time - game_over_timer > 5000:  # 5 seconds for win/lose video
+                    video_playing = False
+                    game_over_timer = current_time
+            else:
+                # Show win/lose text in fullscreen for 2 seconds after video
+                won = tracker.score > 0
+                show_win_lose_text_fullscreen(won)
+                game_state = SHOWING_WIN_LOSE_TEXT
+                win_lose_text_timer = current_time
+        
+        elif game_state == SHOWING_WIN_LOSE_TEXT:
+            # Show win/lose text for 2 seconds after video, then reset
+            if current_time - win_lose_text_timer > win_lose_text_duration:
                 game_state = WAITING_FOR_START
                 active_tiles = {(2, 2): "cue"}  # Highlight center tile
+                video_playing = False
+            else:
+                # Keep showing the win/lose text
+                won = tracker.score > 0
+                show_win_lose_text_fullscreen(won)
         
         # Update game logic
         if game_state == PLAYING_GAME:
@@ -478,8 +510,8 @@ def run_desktop_game():
 def run_arduino_game():
     """Main game loop for Arduino-based gameplay"""
     global game_state, active_tiles, pattern_timer, difficulty_timer, game_start_time
-    global current_difficulty
-    global pattern_interval, game_over_timer, last_stump_pos, total_patterns_played
+    global current_difficulty, video_playing
+    global pattern_interval, game_over_timer, win_lose_text_timer, last_stump_pos, total_patterns_played
     
     # Initialize Arduino connection
     initialize_arduino()
@@ -498,7 +530,7 @@ def run_arduino_game():
                 # Any key press returns to splash screen
                 game_state = WAITING_FOR_START
                 active_tiles = {(2, 2): "cue"}  # Highlight center tile
-                video_player.stop()
+                video_playing = False
 
         # Handle different game states
         if game_state == WAITING_FOR_START:
@@ -513,7 +545,7 @@ def run_arduino_game():
             pressed_tile = get_pressed_tile()
             if pressed_tile == (2, 2):
                 game_state = PLAYING_INTRO
-                video_player.play(INTRO_VIDEO)
+                play_intro_video()
                 game_state = PLAYING_GAME
                 pattern_timer = current_time
                 difficulty_timer = current_time
@@ -521,12 +553,10 @@ def run_arduino_game():
                 tracker.reset()
                 current_difficulty = 1
                 active_tiles = {}  # Clear the center tile
+                video_playing = False
                 last_stump_pos = None  # Initialize last_stump_pos
                 total_patterns_played = 0  # Initialize total_patterns_played
                 
-                # Start background video
-                video_player.play(BACKGROUND_VIDEO, loop=True)
-        
         elif game_state == PLAYING_GAME:
             # Check for tile presses using Arduino
             pressed_tile = get_pressed_tile()
@@ -589,11 +619,28 @@ def run_arduino_game():
             pygame.display.flip()
         
         elif game_state == GAME_OVER:
-            if not video_player.is_playing():
-                game_state = SHOWING_FINAL_SCORE
+            if video_playing:
+                # Wait for video to finish (outro video duration)
+                if current_time - game_over_timer > 5000:  # 5 seconds for win/lose video
+                    video_playing = False
+                    game_over_timer = current_time
+            else:
+                # Show win/lose text in fullscreen for 2 seconds after video
+                won = tracker.score > 0
+                show_win_lose_text_fullscreen(won)
+                game_state = SHOWING_WIN_LOSE_TEXT
+                win_lose_text_timer = current_time
         
-        elif game_state == SHOWING_FINAL_SCORE:
-            show_final_score_fullscreen()
+        elif game_state == SHOWING_WIN_LOSE_TEXT:
+            # Show win/lose text for 2 seconds after video, then reset
+            if current_time - win_lose_text_timer > win_lose_text_duration:
+                game_state = WAITING_FOR_START
+                active_tiles = {(2, 2): "cue"}  # Highlight center tile
+                video_playing = False
+            else:
+                # Keep showing the win/lose text
+                won = tracker.score > 0
+                show_win_lose_text_fullscreen(won)
         
         clock.tick(30)
 
