@@ -1,11 +1,3 @@
-'''# Cursor:
-# Create a draw_tile_grid(screen, active_tiles) function using Pygame.
-# The screen is a fullscreen window.
-# Draw a 3x5 grid of square tiles across the screen.
-# active_tiles is a dictionary with keys like (row, col) and values as color strings: "green", "red", "blue".
-# If a tile is not in the dictionary, draw it as dark gray.
-# Draw each tile as a square with padding between them. '''
-
 import pygame
 
 def draw_tile_grid(screen, active_tiles):
@@ -35,11 +27,11 @@ def draw_tile_grid(screen, active_tiles):
     if tile_height < 0: tile_height = 0
     tile_width = tile_height * 1.5
     
-    # Darker gray color mapping
+    # Color mapping with brown stumps and dark grey rocks
     colors = {
-        "default": (160, 160, 160),  # Darker gray (unlit)
-        "stump": (205, 133, 63),     # Brown for stumps (safe)
-        "rock": (80, 80, 80),        # Very dark grey for stones (obstacle)
+        "default": (160, 160, 160),  # Medium gray (unlit)
+        "stump": (139, 69, 19),      # Brown for stumps (safe)
+        "rock": (64, 64, 64),        # Dark grey for rocks (obstacle)
         "cue": (205, 133, 63),       # Orange-brown for the cue tile
     }
 
@@ -68,6 +60,3 @@ def draw_tile_grid(screen, active_tiles):
 
             tile_rect = pygame.Rect(x, y, tile_width, tile_height)
             pygame.draw.rect(screen, color, tile_rect, border_radius=corner_radius)
-
-
-
