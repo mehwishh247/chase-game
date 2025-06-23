@@ -647,9 +647,9 @@ def run_arduino_game():
         clock.tick(30)
 
 # Start the desktop game
-run_desktop_game()
+# run_desktop_game()
 
 # Start the Arduino game
-# run_arduino_game()
+run_arduino_game()
 
 pygame.quit()

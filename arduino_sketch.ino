@@ -4,23 +4,12 @@ const int numRows = 3;
 const int numCols = 5;
 const int totalTiles = numRows * numCols;
 
-// 2D mapping table for tile pins: tilePins[row][col]
-const uint8_t tilePins[3][5] = {
-  {2, 3, 4, 5, 6},     // Row 0 (cols 0–4)
-  {7, 8, 14, 15, 16},  // Row 1 (cols 0–4)
-  {17, 18, 19, 20, 21} // Row 2 (cols 0–4)
-};
+// LED pins for each tile (D14-D28)
+const int ledPins[15] = {14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28};
 
 // SPI chip select pins for the two MCP3008 chips
 const int CS1 = 10; // MCP3008 #1
-const int CS2 = 11; // MCP3008 #2
-
-// Output LED pins (keeping for backward compatibility)
-const int ledPins[totalTiles] = {
-  2, 3, 4, 5, 6,     // Row 0 (cols 0–4)
-  7, 8, 14, 15, 16,  // Row 1 (cols 0–4)
-  17, 18, 19, 20, 21 // Row 2 (cols 0–4)
-};
+const int CS2 = 9;  // MCP3008 #2
 
 int brightnessValues[totalTiles]; // 0–255 for each tile
 unsigned long lastPressTime[totalTiles]; // for debounce
@@ -56,17 +45,12 @@ void setup() {
   digitalWrite(CS1, HIGH); // idle high
   digitalWrite(CS2, HIGH);
 
-
-  // Set LED pins as output using the 2D mapping
-  for (int row = 0; row < numRows; row++) {
-    for (int col = 0; col < numCols; col++) {
-      int pin = tilePins[row][col];
-      pinMode(pin, OUTPUT);
-      analogWrite(pin, 0);
-      int index = row * numCols + col;
-      brightnessValues[index] = 0;
-      lastPressTime[index] = 0;
-    }
+  // Set LED pins as output
+  for (int i = 0; i < totalTiles; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    analogWrite(ledPins[i], 0);
+    brightnessValues[i] = 0;
+    lastPressTime[i] = 0;
   }
 
   Serial.println("Arduino ready.");
@@ -86,11 +70,8 @@ void handleSerialCommands() {
     if (command.startsWith("light_all")) {
       String brightness = command.substring(10);
       int pwmValue = mapBrightness(brightness);
-      for (int row = 0; row < numRows; row++) {
-        for (int col = 0; col < numCols; col++) {
-          int index = row * numCols + col;
-          brightnessValues[index] = pwmValue;
-        }
+      for (int i = 0; i < totalTiles; i++) {
+        brightnessValues[i] = pwmValue;
       }
 
     } else if (command.startsWith("light")) {
@@ -99,13 +80,11 @@ void handleSerialCommands() {
       int space3 = command.indexOf(' ', space2 + 1);
 
       if (space1 != -1 && space2 != -1 && space3 != -1) {
-        int row = command.substring(space1 + 1, space2).toInt();
-        int col = command.substring(space2 + 1, space3).toInt();
+        int index = command.substring(space1 + 1, space2).toInt();
         String brightness = command.substring(space3 + 1);
 
-        if (row >= 0 && row < numRows && col >= 0 && col < numCols) {
+        if (index >= 0 && index < totalTiles) {
           int pwmValue = mapBrightness(brightness);
-          int index = row * numCols + col;
           brightnessValues[index] = pwmValue;
         }
       }
@@ -114,12 +93,8 @@ void handleSerialCommands() {
 }
 
 void updateLEDs() {
-  for (int row = 0; row < numRows; row++) {
-    for (int col = 0; col < numCols; col++) {
-      int pin = tilePins[row][col];
-      int index = row * numCols + col;
-      analogWrite(pin, brightnessValues[index]);
-    }
+  for (int i = 0; i < totalTiles; i++) {
+    analogWrite(ledPins[i], brightnessValues[i]);
   }
 }
 

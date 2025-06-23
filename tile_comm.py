@@ -181,14 +181,14 @@ class ArduinoTileController:
                 return result
             return None
     
-    def light_tile(self, row: int, col: int, color: str) -> bool:
+    def light_tile(self, row: int, col: int, brightness: int) -> bool:
         """
-        Send command to light up a specific tile with a color.
+        Send command to light up a specific tile with brightness.
         
         Args:
             row: Row coordinate (0-based)
             col: Column coordinate (0-based)
-            color: Color name (e.g., 'red', 'green', 'blue', 'yellow', 'off')
+            brightness: Brightness value (0-255)
             
         Returns:
             True if command sent successfully, False otherwise
@@ -198,7 +198,8 @@ class ArduinoTileController:
             return False
         
         try:
-            command = f"light {row} {col} {color.lower()}\n"
+            index = row * 5 + col
+            command = f"light {index} {brightness}\n"
             self.serial_connection.write(command.encode('utf-8'))
             self.serial_connection.flush()
             logger.debug(f"Sent command: {command.strip()}")
@@ -295,14 +296,14 @@ def get_pressed_tile() -> Optional[Tuple[int, int]]:
     
     return _arduino_controller.get_pressed_tile()
 
-def light_tile(row: int, col: int, color: str) -> bool:
+def light_tile(row: int, col: int, brightness: int) -> bool:
     """
-    Light up a specific tile with a color.
+    Light up a specific tile with brightness.
     
     Args:
         row: Row coordinate (0-based)
         col: Column coordinate (0-based)
-        color: Color name
+        brightness: Brightness value (0-255)
         
     Returns:
         True if command sent successfully, False otherwise
@@ -313,7 +314,7 @@ def light_tile(row: int, col: int, color: str) -> bool:
         logger.error("Arduino not initialized. Call initialize_arduino() first.")
         return False
     
-    return _arduino_controller.light_tile(row, col, color)
+    return _arduino_controller.light_tile(row, col, brightness)
 
 def cleanup():
     """Clean up Arduino connection."""
@@ -344,9 +345,9 @@ if __name__ == "__main__":
             print("Arduino connected successfully!")
             
             # Test lighting some tiles
-            light_tile(0, 0, "red")
-            light_tile(1, 1, "green")
-            light_tile(2, 2, "blue")
+            light_tile(0, 0, 255)
+            light_tile(1, 1, 128)
+            light_tile(2, 2, 64)
             
             # Monitor for pressed tiles
             print("Monitoring for pressed tiles... (Press Ctrl+C to stop)")
@@ -356,7 +357,7 @@ if __name__ == "__main__":
                     row, col = pressed
                     print(f"Tile pressed at ({row}, {col})")
                     # Light up the pressed tile
-                    light_tile(row, col, "yellow")
+                    light_tile(row, col, 255)
                 time.sleep(0.1)
                 
     except KeyboardInterrupt:
