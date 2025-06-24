@@ -87,6 +87,7 @@ class ArduinoTileController:
                 self.start_listening()
                 return True
             else:
+                print('failed serial connection')
                 logger.error("Failed to open serial connection")
                 return False
                 

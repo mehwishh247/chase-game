@@ -57,6 +57,7 @@ void setup() {
 }
 
 void loop() {
+  Serial.println("[DEBUG] Loop iteration start");
   handleSerialCommands();
   readFSRsAndSendPressed();
   updateLEDs();
@@ -67,12 +68,19 @@ void handleSerialCommands() {
     String command = Serial.readStringUntil('\n');
     Serial.print("[PYTHON IN] ");
     Serial.println(command);
+    Serial.print("[DEBUG] Received command: ");
+    Serial.println(command);
 
     command.trim();
 
     if (command.startsWith("light_all")) {
       String brightness = command.substring(10);
       int pwmValue = mapBrightness(brightness);
+      Serial.print("[DEBUG] Setting all tiles to brightness: ");
+      Serial.print(brightness);
+      Serial.print(" (PWM: ");
+      Serial.print(pwmValue);
+      Serial.println(")");
       for (int i = 0; i < totalTiles; i++) {
         brightnessValues[i] = pwmValue;
       }
@@ -88,6 +96,13 @@ void handleSerialCommands() {
 
         if (index >= 0 && index < totalTiles) {
           int pwmValue = mapBrightness(brightness);
+          Serial.print("[DEBUG] Setting tile ");
+          Serial.print(index);
+          Serial.print(" to brightness: ");
+          Serial.print(brightness);
+          Serial.print(" (PWM: ");
+          Serial.print(pwmValue);
+          Serial.println(")");
           brightnessValues[index] = pwmValue;
         }
       }
@@ -113,6 +128,14 @@ void readFSRsAndSendPressed() {
         Serial.print(row);
         Serial.print(" ");
         Serial.println(col);
+        Serial.print("[DEBUG] Tile press detected - Index: ");
+        Serial.print(i);
+        Serial.print(", Row: ");
+        Serial.print(row);
+        Serial.print(", Col: ");
+        Serial.print(col);
+        Serial.print(", ADC Value: ");
+        Serial.println(adcVal);
         lastPressTime[i] = now;
       }
     }
@@ -132,5 +155,16 @@ int readADC(int index) {
   int lowBits = SPI.transfer(0x00);
   digitalWrite(csPin, HIGH);
 
-  return ((highBits & 0x03) << 8) | lowBits;
+  int result = ((highBits & 0x03) << 8) | lowBits;
+  
+  Serial.print("[DEBUG] readADC - Index: ");
+  Serial.print(index);
+  Serial.print(", Chip: ");
+  Serial.print(chip);
+  Serial.print(", Channel: ");
+  Serial.print(channel);
+  Serial.print(", ADC Value: ");
+  Serial.println(result);
+  
+  return result;
 }
